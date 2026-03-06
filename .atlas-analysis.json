@@ -1,0 +1,142 @@
+{
+  "projectType": "framework",
+  "projectName": "tsoa",
+  "projectDescription": "Build OpenAPI-compliant REST APIs using TypeScript and Node",
+  "theme": "aspen",
+  "primaryColor": "#3178c6",
+  "lightColor": "#5599ff",
+  "darkColor": "#264f78",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/controllers",
+              "concepts/decorators",
+              "concepts/models",
+              "concepts/validation",
+              "concepts/authentication",
+              "concepts/responses"
+            ]
+          },
+          {
+            "group": "CLI & Configuration",
+            "pages": [
+              "cli/overview",
+              "cli/commands",
+              "cli/configuration",
+              "cli/tsoa-config"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/express-setup",
+              "guides/koa-setup",
+              "guides/hapi-setup",
+              "guides/file-uploads",
+              "guides/dependency-injection",
+              "guides/custom-templates",
+              "guides/openapi-versions"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/custom-route-generator",
+              "advanced/middleware",
+              "advanced/error-handling",
+              "advanced/testing"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/v6-to-v7",
+              "migration/upgrade-guide"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Decorators",
+            "pages": [
+              "api/decorators/route",
+              "api/decorators/methods",
+              "api/decorators/parameters",
+              "api/decorators/response",
+              "api/decorators/security",
+              "api/decorators/tags",
+              "api/decorators/example"
+            ]
+          },
+          {
+            "group": "Functions",
+            "pages": [
+              "api/functions/generate-spec",
+              "api/functions/generate-routes"
+            ]
+          },
+          {
+            "group": "Interfaces",
+            "pages": [
+              "api/interfaces/config",
+              "api/interfaces/spec-config",
+              "api/interfaces/routes-config"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "TypeScript decorators for API definition",
+    "OpenAPI 2.0/3.0/3.1 spec generation",
+    "Automatic route generation for Express/Koa/Hapi",
+    "Runtime request validation",
+    "Type-safe controller development",
+    "JSDoc support for API documentation",
+    "Custom middleware and authentication",
+    "File upload handling"
+  ],
+  "publicApiSurface": [
+    "@Route",
+    "@Get",
+    "@Post",
+    "@Put",
+    "@Patch",
+    "@Delete",
+    "@Body",
+    "@Query",
+    "@Path",
+    "@Header",
+    "@BodyProp",
+    "@SuccessResponse",
+    "@Response",
+    "@Tags",
+    "@Security",
+    "@Example",
+    "@Hidden",
+    "@Deprecated",
+    "@OperationId",
+    "generateSpec()",
+    "generateRoutes()",
+    "tsoa spec",
+    "tsoa routes",
+    "tsoa spec-and-routes"
+  ]
+}
