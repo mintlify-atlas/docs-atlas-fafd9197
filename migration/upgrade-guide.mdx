@@ -1,0 +1,531 @@
+---
+title: General Upgrade Guide
+description: Best practices and strategies for upgrading tsoa across major versions
+---
+
+## Overview
+
+This guide provides general strategies and best practices for upgrading tsoa between major versions. For specific version migrations, see the dedicated migration guides.
+
+## Upgrade Strategy
+
+### Pre-Upgrade Checklist
+
+Before upgrading tsoa, ensure you have:
+
+<Steps>
+  <Step title="Review release notes">
+    Always read the release notes for the target version:
+
+    - Breaking changes
+    - New features
+    - Deprecated features
+    - Known issues
+
+    Find release notes at: [github.com/lukeautry/tsoa/releases](https://github.com/lukeautry/tsoa/releases)
+  </Step>
+
+  <Step title="Check Node.js compatibility">
+    Verify your Node.js version meets the requirements:
+
+    | tsoa Version | Minimum Node.js |
+    |--------------|----------------|
+    | v7.x | 18.0.0 |
+    | v6.x | 18.0.0 |
+    | v5.x | 14.0.0 |
+    | v4.x | 12.0.0 |
+
+    Check your Node.js version:
+
+    ```bash
+    node --version
+    ```
+  </Step>
+
+  <Step title="Verify TypeScript version">
+    Ensure your TypeScript version is compatible:
+
+    | tsoa Version | Minimum TypeScript |
+    |--------------|-------------------|
+    | v7.x | 5.2.2 |
+    | v6.x | 5.3.3 |
+    | v5.x | 4.9.5 |
+    | v4.x | 4.x |
+
+    ```bash
+    npx tsc --version
+    ```
+  </Step>
+
+  <Step title="Create a backup">
+    Always work in a version-controlled environment:
+
+    ```bash
+    git checkout -b upgrade-tsoa-v7
+    git add .
+    git commit -m "Pre-upgrade checkpoint"
+    ```
+  </Step>
+
+  <Step title="Document current configuration">
+    Save your current `tsoa.json` configuration for reference:
+
+    ```bash
+    cp tsoa.json tsoa.json.backup
+    ```
+  </Step>
+</Steps>
+
+### Upgrade Process
+
+<Steps>
+  <Step title="Update package.json">
+    Update tsoa and related dependencies:
+
+    ```json package.json
+    {
+      "dependencies": {
+        "tsoa": "^7.0.0",
+        "express": "^4.21.2",
+        "reflect-metadata": "^0.2.2"
+      },
+      "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@types/express": "^4.17.21",
+        "typescript": "^5.7.2"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    # Clear any cached packages
+    rm -rf node_modules package-lock.json
+    # or for Yarn:
+    rm -rf node_modules yarn.lock
+
+    # Install fresh dependencies
+    npm install
+    # or
+    yarn install
+    ```
+  </Step>
+
+  <Step title="Update TypeScript configuration">
+    Review and update your `tsconfig.json` if needed:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "Node16",
+        "moduleResolution": "Node16",
+        "lib": ["ES2022"],
+        "esModuleInterop": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "skipLibCheck": true,
+        "strict": true
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Clean generated files">
+    Remove old generated files:
+
+    ```bash
+    # Remove generated routes
+    rm -rf src/routes.ts
+    # or your configured routes directory
+
+    # Remove generated spec
+    rm -rf build/swagger.json
+    # or your configured spec directory
+    ```
+  </Step>
+
+  <Step title="Regenerate code">
+    Generate new routes and specifications:
+
+    ```bash
+    npx tsoa spec-and-routes
+    ```
+
+    Or run them separately:
+
+    ```bash
+    npx tsoa spec
+    npx tsoa routes
+    ```
+  </Step>
+
+  <Step title="Fix compilation errors">
+    Address any TypeScript compilation errors:
+
+    ```bash
+    npx tsc --noEmit
+    ```
+
+    Common issues:
+    - Decorator imports may have changed
+    - Type definitions may have been refined
+    - Configuration options may have been renamed
+  </Step>
+
+  <Step title="Run tests">
+    Execute your test suite:
+
+    ```bash
+    npm test
+    ```
+
+    Focus on:
+    - Controller tests
+    - Validation tests
+    - Integration tests
+    - OpenAPI spec validation
+  </Step>
+</Steps>
+
+## Testing Your Upgrade
+
+### Automated Testing
+
+Create tests to verify the upgrade:
+
+```typescript test/upgrade.spec.ts
+import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
+
+describe('tsoa Upgrade Tests', () => {
+  it('should generate valid OpenAPI spec', () => {
+    const specPath = path.join(__dirname, '../build/swagger.json');
+    expect(fs.existsSync(specPath)).to.be.true;
+
+    const spec = JSON.parse(fs.readFileSync(specPath, 'utf-8'));
+    expect(spec.openapi || spec.swagger).to.exist;
+  });
+
+  it('should generate routes file', () => {
+    const routesPath = path.join(__dirname, '../src/routes.ts');
+    expect(fs.existsSync(routesPath)).to.be.true;
+  });
+
+  it('should have valid route registrations', () => {
+    const { RegisterRoutes } = require('../src/routes');
+    expect(RegisterRoutes).to.be.a('function');
+  });
+});
+```
+
+### Manual Testing
+
+<Accordion title="Test API endpoints">
+  Test all your endpoints manually:
+
+  ```bash
+  # Start your server
+  npm start
+
+  # Test a sample endpoint
+  curl http://localhost:3000/api/users
+
+  # Test with validation
+  curl -X POST http://localhost:3000/api/users \
+    -H "Content-Type: application/json" \
+    -d '{"name":"John","email":"john@example.com"}'
+  ```
+</Accordion>
+
+<Accordion title="Validate OpenAPI spec">
+  Use online validators to check your spec:
+
+  ```bash
+  # Install validator
+  npm install -g openapi-validator-cli
+
+  # Validate your spec
+  openapi-validator-cli build/swagger.json
+  ```
+
+  Or use online tools:
+  - [editor.swagger.io](https://editor.swagger.io/)
+  - [apitools.dev/swagger-parser](https://apitools.dev/swagger-parser/online/)
+</Accordion>
+
+<Accordion title="Test authentication">
+  Verify security configurations:
+
+  ```bash
+  # Test with auth header
+  curl http://localhost:3000/api/protected \
+    -H "Authorization: Bearer YOUR_TOKEN"
+
+  # Test without auth (should fail)
+  curl http://localhost:3000/api/protected
+  ```
+</Accordion>
+
+<Accordion title="Test file uploads">
+  If using file uploads:
+
+  ```bash
+  curl -X POST http://localhost:3000/api/upload \
+    -F "file=@/path/to/file.pdf" \
+    -F "description=Test upload"
+  ```
+</Accordion>
+
+## Common Issues
+
+### Import Errors
+
+**Problem**: Decorators or types cannot be imported
+
+```typescript Error
+import { Controller, Route } from 'tsoa';
+// Error: Module not found
+```
+
+**Solution**: Ensure decorators are imported correctly
+
+```typescript Fixed
+import { Controller, Route, Get, Post } from 'tsoa';
+// All decorators should be available from 'tsoa'
+```
+
+### Configuration Changes
+
+**Problem**: Configuration file not recognized
+
+**Solution**: Check for deprecated configuration options:
+
+<CodeGroup>
+```json Deprecated
+{
+  "spec": {
+    "swagger": "2.0"
+  }
+}
+```
+
+```json Current
+{
+  "spec": {
+    "specVersion": 3
+  }
+}
+```
+</CodeGroup>
+
+### Validation Errors
+
+**Problem**: Runtime validation behaves differently
+
+**Solution**: Review validation decorators:
+
+```typescript
+import { IsInt, IsString, MinLength } from 'class-validator';
+
+interface CreateUserRequest {
+  @IsString()
+  @MinLength(3)
+  name: string;
+
+  @IsInt()
+  age: number;
+}
+```
+
+Ensure all validation rules are explicitly defined.
+
+### Generated Code Issues
+
+**Problem**: Generated routes have syntax errors
+
+**Solution**:
+1. Delete generated files
+2. Clear tsoa cache: `rm -rf node_modules/.tsoa`
+3. Regenerate: `npx tsoa spec-and-routes`
+
+### OpenAPI Spec Validation
+
+**Problem**: Generated spec is invalid
+
+**Solution**: Use `additionalProperties` correctly:
+
+```typescript
+interface StrictModel {
+  name: string;
+  age: number;
+  // No additional properties allowed
+}
+
+interface FlexibleModel {
+  name: string;
+  [key: string]: unknown; // Additional properties allowed
+}
+```
+
+## Version-Specific Guides
+
+For detailed migration instructions:
+
+<CardGroup cols={2}>
+  <Card title="v6 to v7 Migration" icon="arrow-up" href="/migration/v6-to-v7">
+    OpenAPI 3.1.0 support and validation improvements
+  </Card>
+  <Card title="v5 to v6 Migration" icon="arrow-up">
+    Node.js 18 requirement and TypeScript 5 support
+  </Card>
+</CardGroup>
+
+## Major Version Changes Summary
+
+### tsoa v7 (2025)
+
+- OpenAPI 3.1.0 support
+- Enhanced circular reference handling
+- Zod infer type support
+- TypeScript 5.7+ support
+- Improved generic type resolution
+
+### tsoa v6 (2023)
+
+- Node.js 18+ required
+- TypeScript 5+ support
+- ESM improvements (.mts, .cts support)
+- OpenID Connect security
+- Enhanced validation for intersections and unions
+
+### tsoa v5 (2022)
+
+- Improved metadata generation
+- Better type inference
+- Enhanced route generation
+
+## Rollback Procedure
+
+If the upgrade fails:
+
+<Steps>
+  <Step title="Revert package.json">
+    ```bash
+    git checkout package.json
+    ```
+  </Step>
+
+  <Step title="Reinstall old dependencies">
+    ```bash
+    rm -rf node_modules package-lock.json
+    npm install
+    ```
+  </Step>
+
+  <Step title="Restore configuration">
+    ```bash
+    git checkout tsoa.json
+    ```
+  </Step>
+
+  <Step title="Regenerate with old version">
+    ```bash
+    npx tsoa spec-and-routes
+    ```
+  </Step>
+
+  <Step title="Verify application works">
+    ```bash
+    npm test
+    npm start
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+### 1. Incremental Upgrades
+
+Don't skip major versions. Upgrade incrementally:
+
+```
+v4 → v5 → v6 → v7
+```
+
+This makes it easier to identify and fix breaking changes.
+
+### 2. Use Lock Files
+
+Always commit your `package-lock.json` or `yarn.lock`:
+
+```bash
+git add package-lock.json
+git commit -m "Lock dependencies for tsoa upgrade"
+```
+
+### 3. Test in Staging
+
+Never upgrade directly in production:
+
+1. Test in local development
+2. Deploy to staging environment
+3. Run full test suite
+4. Deploy to production
+
+### 4. Monitor After Upgrade
+
+Watch for issues after upgrading:
+
+- Response times
+- Error rates
+- Validation failures
+- OpenAPI spec compatibility
+
+### 5. Document Changes
+
+Keep a migration log:
+
+```markdown MIGRATION_LOG.md
+# tsoa Upgrade Log
+
+## v6 to v7 (2025-03-06)
+
+- Updated from 6.6.1 to 7.0.0-alpha.0
+- Changed specVersion to 3.1 for OpenAPI 3.1.0
+- Fixed circular reference issues in User model
+- Updated validation tests
+
+### Issues Encountered
+- Fixed: Generic type resolution in SearchQuery
+- Fixed: Updated multer options to RegisterRoutes
+```
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/lukeautry/tsoa/issues">
+    Report bugs or search existing issues
+  </Card>
+  <Card title="Discussions" icon="comments" href="https://github.com/lukeautry/tsoa/discussions">
+    Ask questions and share experiences
+  </Card>
+  <Card title="Configuration Reference" icon="gear" href="/cli/tsoa-config">
+    Review configuration options
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/decorators/route">
+    Explore decorator and API documentation
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+After successfully upgrading:
+
+1. **Update documentation**: Refresh your API documentation with the new OpenAPI spec
+2. **Notify consumers**: Inform API consumers of any changes
+3. **Monitor logs**: Watch for unexpected behavior
+4. **Update CI/CD**: Ensure deployment pipelines work with the new version
+5. **Review new features**: Explore new capabilities introduced in the upgrade

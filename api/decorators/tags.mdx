@@ -1,0 +1,312 @@
+---
+title: "@Tags"
+description: "Organize endpoints with tags for better documentation"
+---
+
+## Overview
+
+The `@Tags` decorator assigns one or more tags to controllers or endpoints, which helps organize your API documentation into logical groups. Tags are displayed in OpenAPI/Swagger UI as collapsible sections.
+
+## Signature
+
+```typescript
+function Tags(...values: string[]): ClassDecorator & MethodDecorator
+```
+
+<ParamField path="values" type="...string[]" required>
+  One or more tag names to apply to the controller or method.
+</ParamField>
+
+## Usage
+
+### Controller-Level Tags
+
+Apply tags to all endpoints in a controller:
+
+```typescript
+import { Controller, Get, Post, Route, Tags } from 'tsoa';
+
+@Tags('Users')
+@Route('users')
+export class UserController extends Controller {
+  // Tagged as 'Users'
+  @Get()
+  public async listUsers(): Promise<User[]> {
+    return await userService.findAll();
+  }
+  
+  // Tagged as 'Users'
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+  
+  // Tagged as 'Users'
+  @Post()
+  public async createUser(@Body() user: CreateUserRequest): Promise<User> {
+    return await userService.create(user);
+  }
+}
+```
+
+### Method-Level Tags
+
+Override or add tags to specific endpoints:
+
+```typescript
+import { Get, Post, Route, Tags } from 'tsoa';
+
+@Tags('Products')
+@Route('products')
+export class ProductController {
+  // Tagged as 'Products'
+  @Get()
+  public async listProducts(): Promise<Product[]> {
+    return await productService.findAll();
+  }
+  
+  // Tagged as 'Products' and 'Admin'
+  @Tags('Products', 'Admin')
+  @Post()
+  public async createProduct(
+    @Body() product: CreateProductRequest
+  ): Promise<Product> {
+    return await productService.create(product);
+  }
+  
+  // Tagged as 'Search' (overrides controller tag)
+  @Tags('Search')
+  @Get('search')
+  public async searchProducts(
+    @Query() query: string
+  ): Promise<Product[]> {
+    return await productService.search(query);
+  }
+}
+```
+
+### Multiple Tags
+
+```typescript
+import { Get, Route, Tags } from 'tsoa';
+
+@Route('analytics')
+export class AnalyticsController {
+  @Tags('Analytics', 'Reports', 'Admin')
+  @Get('dashboard')
+  public async getDashboard(): Promise<DashboardData> {
+    return await analyticsService.getDashboard();
+  }
+  
+  @Tags('Analytics', 'Public')
+  @Get('summary')
+  public async getSummary(): Promise<Summary> {
+    return await analyticsService.getSummary();
+  }
+}
+```
+
+## Organizing Your API
+
+### By Resource Type
+
+```typescript
+@Tags('Users')
+@Route('users')
+export class UserController { /* ... */ }
+
+@Tags('Posts')
+@Route('posts')
+export class PostController { /* ... */ }
+
+@Tags('Comments')
+@Route('comments')
+export class CommentController { /* ... */ }
+```
+
+### By Access Level
+
+```typescript
+@Tags('Public')
+@Route('public')
+export class PublicController { /* ... */ }
+
+@Tags('Protected')
+@Security('bearer_token')
+@Route('api')
+export class ApiController { /* ... */ }
+
+@Tags('Admin')
+@Security('bearer_token')
+@Route('admin')
+export class AdminController { /* ... */ }
+```
+
+### By Feature Area
+
+```typescript
+@Tags('Authentication')
+@Route('auth')
+export class AuthController { /* ... */ }
+
+@Tags('User Management')
+@Route('users')
+export class UserController { /* ... */ }
+
+@Tags('Content Management')
+@Route('content')
+export class ContentController { /* ... */ }
+
+@Tags('Analytics')
+@Route('analytics')
+export class AnalyticsController { /* ... */ }
+```
+
+### Hybrid Approach
+
+```typescript
+@Tags('Products', 'Public')
+@Route('products')
+export class ProductController {
+  @Get()
+  public async listProducts(): Promise<Product[]> {
+    return await productService.findAll();
+  }
+  
+  @Tags('Products', 'Admin')
+  @Security('bearer_token')
+  @Post()
+  public async createProduct(
+    @Body() product: CreateProductRequest
+  ): Promise<Product> {
+    return await productService.create(product);
+  }
+}
+```
+
+## Tag Metadata
+
+Define tag descriptions and metadata in your `tsoa.json` configuration:
+
+```json
+{
+  "spec": {
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management endpoints",
+        "externalDocs": {
+          "description": "User API Documentation",
+          "url": "https://docs.example.com/users"
+        }
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog and inventory management"
+      },
+      {
+        "name": "Admin",
+        "description": "Administrative endpoints requiring elevated privileges"
+      },
+      {
+        "name": "Public",
+        "description": "Publicly accessible endpoints without authentication"
+      }
+    ]
+  }
+}
+```
+
+## Examples
+
+### E-commerce API
+
+```typescript
+@Tags('Products')
+@Route('products')
+export class ProductController {
+  @Get()
+  public async listProducts(): Promise<Product[]> { /* ... */ }
+}
+
+@Tags('Cart', 'Public')
+@Route('cart')
+export class CartController {
+  @Get()
+  public async getCart(): Promise<Cart> { /* ... */ }
+}
+
+@Tags('Orders', 'Protected')
+@Security('bearer_token')
+@Route('orders')
+export class OrderController {
+  @Post()
+  public async createOrder(): Promise<Order> { /* ... */ }
+}
+
+@Tags('Admin', 'Orders')
+@Security('bearer_token')
+@Route('admin/orders')
+export class AdminOrderController {
+  @Get()
+  public async listAllOrders(): Promise<Order[]> { /* ... */ }
+}
+```
+
+### SaaS Platform API
+
+```typescript
+@Tags('Authentication')
+@Route('auth')
+export class AuthController {
+  @Post('login')
+  public async login(): Promise<AuthResponse> { /* ... */ }
+  
+  @Post('register')
+  public async register(): Promise<AuthResponse> { /* ... */ }
+}
+
+@Tags('Workspaces')
+@Security('bearer_token')
+@Route('workspaces')
+export class WorkspaceController {
+  @Get()
+  public async listWorkspaces(): Promise<Workspace[]> { /* ... */ }
+}
+
+@Tags('Projects', 'Collaboration')
+@Security('bearer_token')
+@Route('projects')
+export class ProjectController {
+  @Get()
+  public async listProjects(): Promise<Project[]> { /* ... */ }
+}
+
+@Tags('Billing', 'Admin')
+@Security('bearer_token')
+@Route('billing')
+export class BillingController {
+  @Get('invoices')
+  public async listInvoices(): Promise<Invoice[]> { /* ... */ }
+}
+```
+
+## Best Practices
+
+1. **Use consistent naming**: Choose a naming convention and stick to it (e.g., singular vs. plural, capitalization)
+
+2. **Keep tags focused**: Each tag should represent a clear, logical grouping
+
+3. **Limit the number of tags**: Too many tags can make documentation harder to navigate
+
+4. **Provide descriptions**: Add tag metadata in `tsoa.json` to help users understand each tag's purpose
+
+5. **Consider your audience**: Organize tags based on how users will consume your API
+
+6. **Use multiple tags sparingly**: Only apply multiple tags when an endpoint truly belongs to multiple categories
+
+## See Also
+
+- [Configuration: tags](/api/interfaces/spec-config#tags)
+- [@Route Decorator](/api/decorators/route)
+- [@Security Decorator](/api/decorators/security)

@@ -1,0 +1,118 @@
+---
+title: "Introduction"
+description: "Build OpenAPI-compliant REST APIs using TypeScript and Node"
+---
+
+# Welcome to tsoa
+
+tsoa is a framework that allows you to build OpenAPI-compliant REST APIs using TypeScript and Node. Your TypeScript controllers and models become the single source of truth for your API.
+
+## Why tsoa?
+
+<CardGroup cols={2}>
+  <Card title="Type-Safe APIs" icon="shield-check">
+    Leverage TypeScript's type system for compile-time safety and better developer experience
+  </Card>
+  <Card title="OpenAPI Generation" icon="file-code">
+    Automatically generate OpenAPI 2.0, 3.0, or 3.1 specifications from your code
+  </Card>
+  <Card title="Runtime Validation" icon="check-double">
+    Built-in request validation based on your TypeScript types and decorators
+  </Card>
+  <Card title="Framework Agnostic" icon="plug">
+    Works with Express, Koa, and Hapi with extensible template support
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **TypeScript decorators** for defining controllers, routes, and parameters
+- **Automatic OpenAPI spec generation** supporting versions 2.0, 3.0, and 3.1
+- **Route generation** for Express, Koa, and Hapi frameworks
+- **Runtime request validation** ensuring type safety at runtime
+- **JSDoc support** for enriching your API documentation
+- **Authentication & authorization** with flexible security decorators
+- **File upload handling** with built-in multer support
+- **Dependency injection** compatible with popular IoC containers
+
+## Philosophy
+
+tsoa follows these core principles:
+
+1. **TypeScript types as source of truth** — Rely on TypeScript type annotations to generate API metadata whenever possible
+2. **Decorators for metadata** — Use decorators when type annotations aren't sufficient
+3. **JSDoc for descriptions** — Use JSDoc comments for pure text metadata like endpoint descriptions
+4. **Minimize boilerplate** — Keep your code clean and focused on business logic
+5. **Runtime matches spec** — Runtime validation behaves as closely as possible to the generated OpenAPI specification
+
+## Quick Example
+
+Here's a simple tsoa controller:
+
+```typescript UserController.ts
+import { Controller, Get, Route, Query } from 'tsoa';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Retrieves a user by ID
+   */
+  @Get('{userId}')
+  public async getUser(userId: number): Promise<User> {
+    return {
+      id: userId,
+      name: 'John Doe',
+      email: 'john@example.com'
+    };
+  }
+
+  /**
+   * Search users by name
+   */
+  @Get('search')
+  public async searchUsers(@Query() name: string): Promise<User[]> {
+    // Implementation here
+    return [];
+  }
+}
+```
+
+From this controller, tsoa will:
+
+- Generate OpenAPI specification with proper types
+- Create runtime routes for your framework (Express/Koa/Hapi)
+- Validate incoming requests against your TypeScript types
+- Provide type-safe request handling
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install tsoa and set up your project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first API in minutes
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/controllers">
+    Learn about controllers, decorators, and models
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/decorators/route">
+    Explore all available decorators and functions
+  </Card>
+</CardGroup>
+
+## Community & Support
+
+- **GitHub**: [lukeautry/tsoa](https://github.com/lukeautry/tsoa)
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/lukeautry/tsoa/issues)
+- **Discussions**: Join the conversation in [GitHub Discussions](https://github.com/lukeautry/tsoa/discussions)
+
+<Note>
+  tsoa is pronounced "so-uh" and is maintained by an active community of contributors.
+</Note>

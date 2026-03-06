@@ -1,0 +1,373 @@
+---
+title: Express Setup
+description: Complete guide to setting up tsoa with Express.js
+---
+
+This guide walks you through integrating tsoa with an Express.js application, from initial setup to running your API server.
+
+## Installation
+
+<Steps>
+
+<Step title="Install Dependencies">
+
+Install tsoa along with Express and its TypeScript definitions:
+
+```bash
+npm install tsoa express
+npm install --save-dev @types/express @types/node typescript
+```
+
+</Step>
+
+<Step title="Configure tsoa">
+
+Create a `tsoa.json` configuration file in your project root:
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "build",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+<Info>The `middleware` field must be set to `"express"` for Express.js projects.</Info>
+
+</Step>
+
+<Step title="Create a Controller">
+
+Create your first controller with tsoa decorators:
+
+```typescript src/controllers/userController.ts
+import { Controller, Get, Post, Route, Body, Path, SuccessResponse } from 'tsoa';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Retrieves a user by ID
+   * @param userId The user's identifier
+   */
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return {
+      id: userId,
+      name: 'John Doe',
+      email: 'john@example.com'
+    };
+  }
+
+  /**
+   * Creates a new user
+   */
+  @Post()
+  @SuccessResponse('201', 'Created')
+  public async createUser(@Body() requestBody: CreateUserRequest): Promise<User> {
+    this.setStatus(201);
+    return {
+      id: Math.floor(Math.random() * 10000),
+      ...requestBody
+    };
+  }
+}
+```
+
+</Step>
+
+<Step title="Set Up Express Server">
+
+Create your Express application and register tsoa routes:
+
+```typescript src/app.ts
+import express, { Request, Response, NextFunction } from 'express';
+import bodyParser from 'body-parser';
+import { RegisterRoutes } from './routes';
+
+export const app = express();
+
+// Middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+// Error handling - must come after route registration
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  const status = err.status || 500;
+  const body: any = {
+    fields: err.fields || undefined,
+    message: err.message || 'An error occurred during the request.',
+    name: err.name,
+    status,
+  };
+  res.status(status).json(body);
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
+```
+
+</Step>
+
+<Step title="Generate Routes and Spec">
+
+Add scripts to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsoa spec-and-routes && tsc",
+    "start": "node build/app.js",
+    "dev": "tsoa spec-and-routes && ts-node src/app.ts"
+  }
+}
+```
+
+Generate routes and OpenAPI spec:
+
+```bash
+npm run build
+```
+
+This creates:
+- `src/routes.ts` - Generated route handlers
+- `build/swagger.json` - OpenAPI specification
+
+</Step>
+
+<Step title="Start the Server">
+
+```bash
+npm start
+```
+
+Your API is now running at `http://localhost:3000`!
+
+Test it:
+```bash
+curl http://localhost:3000/users/1
+```
+
+</Step>
+
+</Steps>
+
+## Router vs Application
+
+tsoa supports both Express `Application` and `Router` instances:
+
+<CodeGroup>
+
+```typescript Using Application
+import express from 'express';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+RegisterRoutes(app);
+```
+
+```typescript Using Router
+import express from 'express';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+const router = express.Router();
+
+RegisterRoutes(router);
+app.use('/api/v1', router);
+```
+
+</CodeGroup>
+
+## Request Context
+
+Access the raw Express request and response objects in your controllers:
+
+```typescript
+import { Controller, Get, Request, Response } from 'tsoa';
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+
+@Route('example')
+export class ExampleController extends Controller {
+  @Get('with-context')
+  public async withContext(
+    @Request() request: ExpressRequest
+  ): Promise<void> {
+    // Access request headers
+    const userAgent = request.headers['user-agent'];
+    
+    // Access custom middleware values
+    const customValue = (request as any).customValue;
+    
+    return { userAgent, customValue };
+  }
+}
+```
+
+## Middleware Integration
+
+Apply Express middleware to specific routes or controllers:
+
+```typescript
+import { Controller, Get, Middlewares } from 'tsoa';
+import { Request, Response, NextFunction } from 'express';
+
+const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  // Your auth logic
+  if (req.headers.authorization) {
+    next();
+  } else {
+    res.status(401).json({ message: 'Unauthorized' });
+  }
+};
+
+const loggingMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+};
+
+@Route('protected')
+@Middlewares(authMiddleware)
+export class ProtectedController extends Controller {
+  @Get('data')
+  @Middlewares(loggingMiddleware)
+  public async getData(): Promise<any> {
+    return { data: 'sensitive information' };
+  }
+}
+```
+
+## Custom Base Path
+
+Configure a base path for all routes:
+
+```json tsoa.json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "basePath": "/api/v1"
+  }
+}
+```
+
+All routes will be prefixed with `/api/v1`.
+
+## Advanced Configuration
+
+### Response Headers
+
+Set custom response headers:
+
+```typescript
+@Get('with-headers')
+public async withHeaders(): Promise<User> {
+  this.setHeader('X-Custom-Header', 'value');
+  this.setHeader('Cache-Control', 'no-cache');
+  return user;
+}
+```
+
+### Multiple Status Codes
+
+Document multiple possible status codes:
+
+```typescript
+import { Controller, Get, Response } from 'tsoa';
+
+interface ErrorResponse {
+  message: string;
+}
+
+@Route('items')
+export class ItemController extends Controller {
+  @Get('{id}')
+  @Response<ErrorResponse>(404, 'Not Found')
+  @Response<ErrorResponse>(500, 'Internal Server Error')
+  public async getItem(@Path() id: number): Promise<Item> {
+    const item = await findItem(id);
+    
+    if (!item) {
+      this.setStatus(404);
+      return { message: 'Item not found' } as any;
+    }
+    
+    return item;
+  }
+}
+```
+
+## Common Patterns
+
+### Query Parameters
+
+```typescript
+import { Controller, Get, Query } from 'tsoa';
+
+@Route('search')
+export class SearchController extends Controller {
+  @Get()
+  public async search(
+    @Query() q: string,
+    @Query() limit?: number,
+    @Query() offset?: number
+  ): Promise<SearchResult[]> {
+    return performSearch(q, limit || 10, offset || 0);
+  }
+}
+```
+
+### Request Headers
+
+```typescript
+import { Controller, Get, Header } from 'tsoa';
+
+@Route('api')
+export class ApiController extends Controller {
+  @Get('version')
+  public async getVersion(
+    @Header('x-api-version') apiVersion?: string
+  ): Promise<any> {
+    return { requestedVersion: apiVersion };
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Learn how to handle file uploads with multer
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your API with authentication
+  </Card>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Implement request validation
+  </Card>
+  <Card title="Dependency Injection" icon="plug" href="/guides/dependency-injection">
+    Use IoC containers with your controllers
+  </Card>
+</CardGroup>

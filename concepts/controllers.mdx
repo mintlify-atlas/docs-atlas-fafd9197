@@ -1,0 +1,521 @@
+---
+title: 'Controllers'
+description: 'Define API endpoints with TypeScript classes and decorators'
+icon: 'diagram-project'
+---
+
+## Overview
+
+Controllers in tsoa are TypeScript classes that define your API endpoints. Each controller represents a group of related routes, and methods within the controller become individual API endpoints.
+
+<Note>
+  Controllers use the `@Route` decorator to define the base path and method decorators (`@Get`, `@Post`, etc.) to define HTTP operations.
+</Note>
+
+## Basic Controller
+
+Create a controller by decorating a class with `@Route`:
+
+```typescript
+import { Route, Controller, Get, Post, Body } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController extends Controller {
+  @Get()
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Get('{userId}')
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+
+  @Post()
+  public async createUser(@Body() user: User): Promise<User> {
+    return await userService.create(user);
+  }
+}
+```
+
+## Controller Class
+
+### Route Decorator
+
+The `@Route` decorator defines the base path for all routes in the controller:
+
+```typescript
+@Route('api/v1/products')
+export class ProductController {
+  // All routes will be prefixed with /api/v1/products
+}
+```
+
+### Extending Controller Base Class
+
+Extending the `Controller` base class provides access to helper methods:
+
+```typescript
+import { Controller, Route, Post, SuccessResponse } from '@tsoa/runtime';
+
+@Route('posts')
+export class PostController extends Controller {
+  @Post()
+  @SuccessResponse('201', 'Created')
+  public async createPost(@Body() post: Post): Promise<Post> {
+    const created = await postService.create(post);
+    
+    // Set status code
+    this.setStatus(201);
+    
+    // Set custom headers
+    this.setHeader('Location', `/posts/${created.id}`);
+    
+    return created;
+  }
+}
+```
+
+**Available methods:**
+- `setStatus(statusCode: number)`: Set the HTTP status code
+- `setHeader(name: string, value: string)`: Set a response header
+
+## HTTP Method Decorators
+
+tsoa provides decorators for all standard HTTP methods:
+
+<Tabs>
+  <Tab title="GET">
+    ```typescript
+    @Get()
+    public async getAll(): Promise<Item[]> {
+      return await itemService.getAll();
+    }
+
+    @Get('{id}')
+    public async getById(id: number): Promise<Item> {
+      return await itemService.getById(id);
+    }
+
+    @Get('search')
+    public async search(@Query() term: string): Promise<Item[]> {
+      return await itemService.search(term);
+    }
+    ```
+  </Tab>
+  <Tab title="POST">
+    ```typescript
+    @Post()
+    public async create(@Body() item: Item): Promise<Item> {
+      return await itemService.create(item);
+    }
+
+    @Post('bulk')
+    public async createMany(@Body() items: Item[]): Promise<Item[]> {
+      return await itemService.createMany(items);
+    }
+    ```
+  </Tab>
+  <Tab title="PUT">
+    ```typescript
+    @Put('{id}')
+    public async update(
+      id: number,
+      @Body() item: Item
+    ): Promise<Item> {
+      return await itemService.update(id, item);
+    }
+    ```
+  </Tab>
+  <Tab title="PATCH">
+    ```typescript
+    @Patch('{id}')
+    public async partialUpdate(
+      id: number,
+      @Body() updates: Partial<Item>
+    ): Promise<Item> {
+      return await itemService.patch(id, updates);
+    }
+    ```
+  </Tab>
+  <Tab title="DELETE">
+    ```typescript
+    @Delete('{id}')
+    public async delete(id: number): Promise<void> {
+      await itemService.delete(id);
+    }
+    ```
+  </Tab>
+  <Tab title="HEAD">
+    ```typescript
+    @Head('{id}')
+    public async checkExists(id: number): Promise<void> {
+      const exists = await itemService.exists(id);
+      if (!exists) {
+        throw new Error('Not found');
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OPTIONS">
+    ```typescript
+    @Options()
+    public async getOptions(): Promise<void> {
+      this.setHeader('Allow', 'GET, POST, PUT, DELETE, OPTIONS');
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Path Parameters
+
+Define dynamic path segments using curly braces:
+
+```typescript
+@Route('posts')
+export class PostController {
+  // Matches: /posts/123
+  @Get('{postId}')
+  public async getPost(postId: number): Promise<Post> {
+    return await postService.getById(postId);
+  }
+
+  // Matches: /posts/123/comments/456
+  @Get('{postId}/comments/{commentId}')
+  public async getComment(
+    postId: number,
+    commentId: number
+  ): Promise<Comment> {
+    return await commentService.getById(postId, commentId);
+  }
+}
+```
+
+<Warning>
+  Path parameter names must match the method parameter names exactly (case-sensitive).
+</Warning>
+
+## Route Paths from Constants
+
+Use constants or enums for route paths:
+
+```typescript
+export const API_PATHS = {
+  USERS: 'users',
+  ADMIN: 'admin'
+} as const;
+
+export enum ApiVersion {
+  V1 = 'v1',
+  V2 = 'v2'
+}
+
+@Route(API_PATHS.USERS)
+export class UserController {
+  @Get(ApiVersion.V1)
+  public async getUsersV1(): Promise<UserV1[]> {
+    return await userService.getAllV1();
+  }
+
+  @Get(ApiVersion.V2)
+  public async getUsersV2(): Promise<UserV2[]> {
+    return await userService.getAllV2();
+  }
+}
+```
+
+## Documentation Metadata
+
+### Tags
+
+Group endpoints in the generated API documentation:
+
+```typescript
+import { Tags } from '@tsoa/runtime';
+
+@Route('users')
+@Tags('Users', 'Authentication')
+export class UserController {
+  @Get()
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Post('login')
+  @Tags('Authentication') // Override class-level tags
+  public async login(@Body() credentials: Credentials): Promise<Token> {
+    return await authService.login(credentials);
+  }
+}
+```
+
+### Operation ID
+
+Provide custom operation identifiers for generated clients:
+
+```typescript
+import { OperationId } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  @OperationId('GetUserById')
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+}
+```
+
+### JSDoc Comments
+
+Add descriptions using JSDoc comments:
+
+```typescript
+@Route('users')
+export class UserController {
+  /**
+   * Retrieves a user by their unique identifier
+   * @param userId The unique user ID
+   * @returns The user object with all details
+   */
+  @Get('{userId}')
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+}
+```
+
+## Hiding Routes
+
+Hide endpoints from generated documentation:
+
+```typescript
+import { Hidden } from '@tsoa/runtime';
+
+@Route('admin')
+export class AdminController {
+  @Get('users')
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Get('internal/metrics')
+  @Hidden() // This endpoint won't appear in docs
+  public async getMetrics(): Promise<Metrics> {
+    return await metricsService.getInternal();
+  }
+}
+
+@Route('internal')
+@Hidden() // Hide entire controller
+export class InternalController {
+  @Get('health')
+  public async healthCheck(): Promise<HealthStatus> {
+    return { status: 'ok' };
+  }
+}
+```
+
+## Deprecation
+
+Mark endpoints as deprecated:
+
+```typescript
+import { Deprecated } from '@tsoa/runtime';
+
+@Route('api')
+export class ApiController {
+  /**
+   * @deprecated Use /v2/users instead
+   */
+  @Get('v1/users')
+  @Deprecated()
+  public async getUsersV1(): Promise<User[]> {
+    return await userService.getAllV1();
+  }
+
+  @Get('v2/users')
+  public async getUsersV2(): Promise<User[]> {
+    return await userService.getAllV2();
+  }
+}
+```
+
+## Multiple Controllers
+
+Organize your API with multiple controllers:
+
+```typescript
+// userController.ts
+@Route('users')
+export class UserController {
+  @Get()
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+}
+
+// postController.ts
+@Route('posts')
+export class PostController {
+  @Get()
+  public async getPosts(): Promise<Post[]> {
+    return await postService.getAll();
+  }
+}
+
+// commentController.ts
+@Route('comments')
+export class CommentController {
+  @Get()
+  public async getComments(): Promise<Comment[]> {
+    return await commentService.getAll();
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Controllers Focused">
+    Each controller should handle a single resource or related set of operations:
+    
+    ```typescript
+    // Good: Focused on user operations
+    @Route('users')
+    export class UserController {
+      @Get()
+      public async getUsers(): Promise<User[]> { }
+      
+      @Post()
+      public async createUser(@Body() user: User): Promise<User> { }
+    }
+
+    // Avoid: Mixed responsibilities
+    @Route('api')
+    export class ApiController {
+      @Get('users')
+      public async getUsers(): Promise<User[]> { }
+      
+      @Get('posts')
+      public async getPosts(): Promise<Post[]> { }
+      
+      @Get('comments')
+      public async getComments(): Promise<Comment[]> { }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Delegate Business Logic">
+    Controllers should handle HTTP concerns only. Move business logic to service classes:
+    
+    ```typescript
+    // Good: Thin controller
+    @Route('orders')
+    export class OrderController {
+      @Post()
+      public async createOrder(@Body() order: Order): Promise<Order> {
+        return await orderService.create(order);
+      }
+    }
+
+    // Avoid: Business logic in controller
+    @Route('orders')
+    export class OrderController {
+      @Post()
+      public async createOrder(@Body() order: Order): Promise<Order> {
+        // Validate
+        if (order.items.length === 0) throw new Error('No items');
+        
+        // Calculate totals
+        let total = 0;
+        for (const item of order.items) {
+          total += item.price * item.quantity;
+        }
+        
+        // Save to database
+        const saved = await db.orders.insert({ ...order, total });
+        
+        // Send email
+        await emailService.sendConfirmation(order.email);
+        
+        return saved;
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Consistent Naming">
+    Follow RESTful conventions for endpoint names:
+    
+    ```typescript
+    @Route('articles')
+    export class ArticleController {
+      @Get()                     // GET /articles
+      public async getAll() { }
+      
+      @Get('{id}')              // GET /articles/:id
+      public async getById(id: number) { }
+      
+      @Post()                   // POST /articles
+      public async create(@Body() article: Article) { }
+      
+      @Put('{id}')              // PUT /articles/:id
+      public async update(id: number, @Body() article: Article) { }
+      
+      @Delete('{id}')           // DELETE /articles/:id
+      public async delete(id: number) { }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Document Your Endpoints">
+    Use JSDoc comments to provide rich documentation:
+    
+    ```typescript
+    @Route('products')
+    export class ProductController {
+      /**
+       * Search products by various criteria
+       * 
+       * @param query Search term to match against product names
+       * @param category Filter by product category
+       * @param minPrice Minimum price in cents
+       * @param maxPrice Maximum price in cents
+       * @returns List of products matching the search criteria
+       */
+      @Get('search')
+      public async search(
+        @Query() query: string,
+        @Query() category?: string,
+        @Query() minPrice?: number,
+        @Query() maxPrice?: number
+      ): Promise<Product[]> {
+        return await productService.search({
+          query,
+          category,
+          minPrice,
+          maxPrice
+        });
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Decorators" icon="at" href="/concepts/decorators">
+    Learn about parameter decorators for handling request data
+  </Card>
+  <Card title="Models" icon="cube" href="/concepts/models">
+    Define TypeScript interfaces for request and response types
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Add validation rules to your endpoints
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your endpoints with authentication
+  </Card>
+</CardGroup>

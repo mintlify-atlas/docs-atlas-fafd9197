@@ -1,0 +1,551 @@
+---
+title: Middleware
+description: Apply Express, Koa, or Hapi middleware to your tsoa controllers and routes
+---
+
+tsoa provides a `@Middlewares` decorator that allows you to attach framework-specific middleware to controllers or individual routes. This enables you to leverage existing middleware ecosystems while maintaining type safety.
+
+## Overview
+
+Middleware in tsoa is framework-agnostic at the decorator level but framework-specific at runtime. The `@Middlewares` decorator accepts middleware functions compatible with your chosen framework (Express, Koa, or Hapi).
+
+<Note>
+  Middleware is executed in the order specified, from outermost decorator to innermost, with controller-level middleware running before method-level middleware.
+</Note>
+
+## Basic Usage
+
+### Applying Middleware to Routes
+
+You can apply middleware to individual route methods:
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+
+function loggingMiddleware(req: Request, res: Response, next: NextFunction) {
+  console.log(`${req.method} ${req.path}`);
+  next();
+}
+
+@Route('users')
+export class UserController extends Controller {
+  @Get('{userId}')
+  @Middlewares(loggingMiddleware)
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+}
+```
+
+### Applying Middleware to Controllers
+
+Apply middleware to all routes in a controller:
+
+```typescript
+import { Controller, Get, Post, Route, Middlewares } from 'tsoa';
+import { authenticate } from './middleware/auth';
+
+@Route('admin')
+@Middlewares(authenticate)
+export class AdminController extends Controller {
+  @Get('users')
+  public async getUsers(): Promise<User[]> {
+    // This route is protected by authenticate middleware
+    return await userService.getAll();
+  }
+  
+  @Post('users')
+  public async createUser(requestBody: CreateUserRequest): Promise<User> {
+    // This route is also protected by authenticate middleware
+    return await userService.create(requestBody);
+  }
+}
+```
+
+## Multiple Middleware
+
+You can apply multiple middleware functions, which execute in the order specified:
+
+```typescript
+import { Controller, Post, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+
+function validateApiKey(req: Request, res: Response, next: NextFunction) {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey || apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ message: 'Invalid API key' });
+  }
+  next();
+}
+
+function rateLimit(req: Request, res: Response, next: NextFunction) {
+  // Rate limiting logic
+  next();
+}
+
+function audit(req: Request, res: Response, next: NextFunction) {
+  console.log(`API call: ${req.method} ${req.path}`);
+  next();
+}
+
+@Route('api')
+export class ApiController extends Controller {
+  @Post('sensitive-operation')
+  @Middlewares(validateApiKey, rateLimit, audit)
+  public async performOperation(data: OperationData): Promise<Result> {
+    return await operationService.execute(data);
+  }
+}
+```
+
+## Middleware Hierarchy
+
+When middleware is applied at both controller and method levels, controller middleware executes first:
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { RequestHandler } from 'express';
+
+const controllerMiddleware: RequestHandler = (req, res, next) => {
+  console.log('1. Controller middleware');
+  next();
+};
+
+const methodMiddleware: RequestHandler = (req, res, next) => {
+  console.log('2. Method middleware');
+  next();
+};
+
+@Route('test')
+@Middlewares(controllerMiddleware)
+export class TestController extends Controller {
+  @Get('endpoint')
+  @Middlewares(methodMiddleware)
+  public async test(): Promise<string> {
+    console.log('3. Route handler');
+    return 'Done';
+  }
+}
+
+// Execution order:
+// 1. Controller middleware
+// 2. Method middleware  
+// 3. Route handler
+```
+
+## Framework-Specific Examples
+
+### Express Middleware
+
+```typescript
+import { Controller, Get, Post, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import express from 'express';
+
+// Custom middleware
+function customMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Attach data to request
+  (req as any).customData = { timestamp: Date.now() };
+  next();
+}
+
+// Third-party middleware
+import helmet from 'helmet';
+import cors from 'cors';
+
+@Route('secure')
+@Middlewares(helmet(), cors())
+export class SecureController extends Controller {
+  @Post('data')
+  @Middlewares(express.json({ limit: '10mb' }), customMiddleware)
+  public async saveData(data: DataModel): Promise<void> {
+    await dataService.save(data);
+  }
+}
+```
+
+### Koa Middleware
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Context, Next } from 'koa';
+
+const koaMiddleware = async (ctx: Context, next: Next) => {
+  const start = Date.now();
+  await next();
+  const duration = Date.now() - start;
+  ctx.set('X-Response-Time', `${duration}ms`);
+};
+
+@Route('koa-example')
+@Middlewares(koaMiddleware)
+export class KoaController extends Controller {
+  @Get('test')
+  public async test(): Promise<string> {
+    return 'Koa middleware applied';
+  }
+}
+```
+
+### Hapi Middleware
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Request, ResponseToolkit } from '@hapi/hapi';
+
+const hapiMiddleware = (request: Request, h: ResponseToolkit) => {
+  // Hapi middleware logic
+  return h.continue;
+};
+
+@Route('hapi-example')
+@Middlewares(hapiMiddleware)
+export class HapiController extends Controller {
+  @Get('test')
+  public async test(): Promise<string> {
+    return 'Hapi middleware applied';
+  }
+}
+```
+
+## Common Middleware Patterns
+
+### Authentication Middleware
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+function authenticate(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    (req as any).user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
+
+@Route('protected')
+@Middlewares(authenticate)
+export class ProtectedController extends Controller {
+  @Get('profile')
+  public async getProfile(): Promise<Profile> {
+    // Access user from request
+    const userId = (this.getRequest() as any).user.id;
+    return await profileService.getById(userId);
+  }
+}
+```
+
+<Warning>
+  For OAuth2/JWT authentication with OpenAPI integration, prefer using tsoa's built-in `@Security` decorator instead of custom middleware. See the [Authentication guide](/concepts/authentication) for details.
+</Warning>
+
+### Validation Middleware
+
+```typescript
+import { Controller, Post, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+
+function validateSchema<T>(schema: z.ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      schema.parse(req.body);
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: 'Validation failed',
+          errors: error.errors
+        });
+      }
+      next(error);
+    }
+  };
+}
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  name: z.string().min(2)
+});
+
+@Route('users')
+export class UserController extends Controller {
+  @Post()
+  @Middlewares(validateSchema(createUserSchema))
+  public async createUser(requestBody: CreateUserRequest): Promise<User> {
+    // Body is already validated by middleware
+    return await userService.create(requestBody);
+  }
+}
+```
+
+<Note>
+  tsoa provides built-in runtime validation based on your TypeScript types. Custom validation middleware is typically only needed for complex validation rules not expressible in TypeScript.
+</Note>
+
+### Error Handling Middleware
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+
+function asyncErrorHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+function customErrorHandler(req: Request, res: Response, next: NextFunction) {
+  // Wrap route to catch errors
+  return asyncErrorHandler(async (req, res, next) => {
+    try {
+      next();
+    } catch (error) {
+      console.error('Route error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  })(req, res, next);
+}
+
+@Route('api')
+@Middlewares(customErrorHandler)
+export class ApiController extends Controller {
+  @Get('data')
+  public async getData(): Promise<Data[]> {
+    // Errors caught by customErrorHandler
+    return await dataService.getAll();
+  }
+}
+```
+
+### Logging Middleware
+
+```typescript
+import { Controller, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+import { Logger } from './logger';
+
+function requestLogger(logger: Logger) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const start = Date.now();
+    
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      logger.info({
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration: `${duration}ms`,
+        userAgent: req.headers['user-agent']
+      });
+    });
+    
+    next();
+  };
+}
+
+const logger = new Logger('api');
+
+@Route('api')
+@Middlewares(requestLogger(logger))
+export class ApiController extends Controller {
+  // All routes in this controller will be logged
+}
+```
+
+### Caching Middleware
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+
+function cache(durationSeconds: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = `cache:${req.path}`;
+    const cachedResponse = cacheStore.get(key);
+    
+    if (cachedResponse) {
+      return res.json(cachedResponse);
+    }
+    
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      cacheStore.set(key, body, durationSeconds);
+      return originalJson(body);
+    };
+    
+    next();
+  };
+}
+
+@Route('data')
+export class DataController extends Controller {
+  @Get('public')
+  @Middlewares(cache(300)) // Cache for 5 minutes
+  public async getPublicData(): Promise<PublicData[]> {
+    return await dataService.getPublic();
+  }
+}
+```
+
+## Async Middleware
+
+Express middleware can be synchronous or asynchronous. For async operations, ensure you call `next()` or handle errors:
+
+```typescript
+import { Controller, Post, Route, Middlewares } from 'tsoa';
+import type { Request, Response, NextFunction } from 'express';
+
+function asyncMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Using async/await
+  (async () => {
+    try {
+      const data = await someAsyncOperation();
+      (req as any).asyncData = data;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  })();
+}
+
+// Or using promises
+function promiseMiddleware(req: Request, res: Response, next: NextFunction) {
+  someAsyncOperation()
+    .then(data => {
+      (req as any).asyncData = data;
+      next();
+    })
+    .catch(next);
+}
+
+@Route('async')
+export class AsyncController extends Controller {
+  @Post('operation')
+  @Middlewares(asyncMiddleware, promiseMiddleware)
+  public async performOperation(): Promise<Result> {
+    const data = (this.getRequest() as any).asyncData;
+    return await operationService.execute(data);
+  }
+}
+```
+
+## Testing with Middleware
+
+When testing controllers with middleware, you can create test-specific middleware:
+
+```typescript
+import { Controller, Get, Route, Middlewares } from 'tsoa';
+import type { RequestHandler } from 'express';
+
+const testMiddleware: Record<string, boolean> = {};
+
+export function getMiddlewareState(key: string): boolean | undefined {
+  return testMiddleware[key];
+}
+
+function testMiddlewareFactory(key: string): RequestHandler {
+  return async (req, res, next) => {
+    testMiddleware[key] = true;
+    next();
+  };
+}
+
+@Middlewares(testMiddlewareFactory('controller'))
+@Route('test')
+export class TestController extends Controller {
+  @Middlewares(
+    testMiddlewareFactory('middleware1'),
+    testMiddlewareFactory('middleware2')
+  )
+  @Get('endpoint')
+  public async test(): Promise<void> {
+    return;
+  }
+}
+
+// In your tests:
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../server';
+import { getMiddlewareState } from '../controllers/testController';
+
+describe('Middleware', () => {
+  it('should execute all middleware in order', async () => {
+    await request(app).get('/test/endpoint').expect(200);
+    
+    expect(getMiddlewareState('controller')).to.be.true;
+    expect(getMiddlewareState('middleware1')).to.be.true;
+    expect(getMiddlewareState('middleware2')).to.be.true;
+  });
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use type-safe middleware">
+    Always provide proper TypeScript types for your middleware to catch errors at compile time.
+  </Step>
+  
+  <Step title="Keep middleware focused">
+    Each middleware should have a single responsibility. Compose multiple middleware instead of creating monolithic ones.
+  </Step>
+  
+  <Step title="Handle errors properly">
+    Always call `next(error)` when errors occur in async middleware to ensure they're properly handled.
+  </Step>
+  
+  <Step title="Order matters">
+    Place authentication/authorization middleware before other middleware that depends on user context.
+  </Step>
+  
+  <Step title="Consider performance">
+    Middleware runs on every request to decorated routes. Keep middleware logic lightweight.
+  </Step>
+  
+  <Step title="Document side effects">
+    If middleware modifies the request or response objects, document this clearly for maintainers.
+  </Step>
+</Steps>
+
+## Limitations
+
+<Warning>
+  The `@Middlewares` decorator is metadata-only. Middleware execution is handled by the generated routes file, which means middleware must be available at runtime when routes are registered.
+</Warning>
+
+Middleware limitations:
+- Middleware functions must be statically analyzable (no dynamic middleware generation at route registration time)
+- Type information for modified request/response objects is not automatically propagated
+- Framework switching requires updating all middleware implementations
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Learn about tsoa's built-in authentication with @Security
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation" href="/advanced/error-handling">
+    Comprehensive error handling strategies
+  </Card>
+  
+  <Card title="Custom Route Generator" icon="code" href="/advanced/custom-route-generator">
+    Build custom route generators for advanced middleware integration
+  </Card>
+</CardGroup>

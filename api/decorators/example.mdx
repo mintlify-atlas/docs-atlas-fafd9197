@@ -1,0 +1,467 @@
+---
+title: "@Example"
+description: "Provide example values for requests and responses"
+---
+
+## Overview
+
+The `@Example` decorator adds example data to your OpenAPI specification, which appears in documentation tools like Swagger UI. Examples help API consumers understand the expected format and structure of requests and responses.
+
+## Signature
+
+```typescript
+function Example<T>(exampleModel: T, exampleLabel?: string): PropertyDecorator
+```
+
+<ParamField path="exampleModel" type="T" required>
+  The example value or object. Must match the type of the response or parameter.
+</ParamField>
+
+<ParamField path="exampleLabel" type="string" optional>
+  A label to identify this example. Useful when providing multiple examples.
+</ParamField>
+
+## Usage
+
+### Response Examples
+
+#### Single Example
+
+```typescript
+import { Get, Route, Example } from 'tsoa';
+
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: Date;
+}
+
+@Route('users')
+export class UserController {
+  @Example<User>({
+    id: '123e4567-e89b-12d3-a456-426614174000',
+    username: 'johndoe',
+    email: 'john@example.com',
+    createdAt: new Date('2024-01-15T10:30:00Z')
+  })
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+}
+```
+
+#### Multiple Examples
+
+```typescript
+import { Get, Route, Example } from 'tsoa';
+
+@Route('users')
+export class UserController {
+  @Example<User>({
+    id: 'user-001',
+    username: 'admin',
+    email: 'admin@example.com',
+    role: 'administrator',
+    createdAt: new Date('2024-01-01')
+  }, 'Administrator')
+  @Example<User>({
+    id: 'user-002',
+    username: 'johndoe',
+    email: 'john@example.com',
+    role: 'user',
+    createdAt: new Date('2024-02-15')
+  }, 'Regular User')
+  @Example<User>({
+    id: 'user-003',
+    username: 'jane_editor',
+    email: 'jane@example.com',
+    role: 'editor',
+    createdAt: new Date('2024-03-01')
+  }, 'Editor')
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+}
+```
+
+### Array Response Examples
+
+```typescript
+import { Get, Route, Example } from 'tsoa';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  inStock: boolean;
+}
+
+@Route('products')
+export class ProductController {
+  @Example<Product[]>([
+    {
+      id: 'prod-001',
+      name: 'Laptop',
+      price: 1299.99,
+      inStock: true
+    },
+    {
+      id: 'prod-002',
+      name: 'Mouse',
+      price: 29.99,
+      inStock: true
+    },
+    {
+      id: 'prod-003',
+      name: 'Keyboard',
+      price: 89.99,
+      inStock: false
+    }
+  ])
+  @Get()
+  public async listProducts(): Promise<Product[]> {
+    return await productService.findAll();
+  }
+}
+```
+
+### Complex Nested Examples
+
+```typescript
+import { Get, Route, Example } from 'tsoa';
+
+interface Order {
+  id: string;
+  customer: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  items: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    price: number;
+  }>;
+  total: number;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered';
+  createdAt: Date;
+}
+
+@Route('orders')
+export class OrderController {
+  @Example<Order>({
+    id: 'order-12345',
+    customer: {
+      id: 'cust-001',
+      name: 'John Doe',
+      email: 'john@example.com'
+    },
+    items: [
+      {
+        productId: 'prod-001',
+        productName: 'Laptop',
+        quantity: 1,
+        price: 1299.99
+      },
+      {
+        productId: 'prod-002',
+        productName: 'Mouse',
+        quantity: 2,
+        price: 29.99
+      }
+    ],
+    total: 1359.97,
+    status: 'processing',
+    createdAt: new Date('2024-03-06T14:30:00Z')
+  })
+  @Get('{orderId}')
+  public async getOrder(@Path() orderId: string): Promise<Order> {
+    return await orderService.findById(orderId);
+  }
+}
+```
+
+### Using Imported Constants
+
+```typescript
+// constants.ts
+export const exampleUser = {
+  id: 'user-001',
+  username: 'johndoe',
+  email: 'john@example.com',
+  createdAt: new Date('2024-01-01')
+};
+
+// userController.ts
+import { Get, Route, Example } from 'tsoa';
+import { exampleUser } from './constants';
+
+@Route('users')
+export class UserController {
+  @Example<User>(exampleUser)
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+}
+```
+
+### Examples with Labels
+
+```typescript
+import { Get, Route, Example } from 'tsoa';
+import { successResponse, errorResponse } from './constants';
+
+@Route('api')
+export class ApiController {
+  @Example<ApiResponse>(successResponse, 'Success')
+  @Example<ApiResponse>(errorResponse, 'Error')
+  @Get('data')
+  public async getData(): Promise<ApiResponse> {
+    return await dataService.fetch();
+  }
+}
+```
+
+## JSDoc Examples
+
+You can also provide examples using JSDoc comments:
+
+### Parameter Examples
+
+```typescript
+import { Get, Post, Path, Query, Body, Route } from 'tsoa';
+
+@Route('users')
+export class UserController {
+  /**
+   * @param userId The user's unique identifier
+   * @example userId "123e4567-e89b-12d3-a456-426614174000"
+   * @example userId "user-12345"
+   */
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+  
+  /**
+   * @param searchTerm Search query
+   * @param limit Maximum results
+   * 
+   * @example searchTerm "john"
+   * @example searchTerm "admin"
+   * @example limit 10
+   * @example limit 50
+   */
+  @Get('search')
+  public async searchUsers(
+    @Query() searchTerm: string,
+    @Query() limit?: number
+  ): Promise<User[]> {
+    return await userService.search(searchTerm, limit);
+  }
+}
+```
+
+### Body Parameter Examples
+
+```typescript
+import { Post, Body, Route } from 'tsoa';
+
+interface CreateUserRequest {
+  username: string;
+  email: string;
+  age?: number;
+}
+
+@Route('users')
+export class UserController {
+  /**
+   * Create a new user
+   * 
+   * @param body User data
+   * @example body {
+   *   "username": "johndoe",
+   *   "email": "john@example.com",
+   *   "age": 30
+   * }
+   * @example body {
+   *   "username": "janedoe",
+   *   "email": "jane@example.com"
+   * }
+   */
+  @Post()
+  public async createUser(
+    @Body() body: CreateUserRequest
+  ): Promise<User> {
+    return await userService.create(body);
+  }
+}
+```
+
+### Multiple Parameter Examples
+
+```typescript
+/**
+ * @param path Example path parameter
+ * @param query Example query parameter
+ * @param body Example body content
+ * 
+ * @example path "example-path-1"
+ * @example path "example-path-2"
+ * @example query "example-query-1"
+ * @example query "example-query-2"
+ * @example body {
+ *   "field1": "value1",
+ *   "field2": "value2"
+ * }
+ * @example body {
+ *   "field1": "alternate-value",
+ *   "field2": "another-value"
+ * }
+ */
+@Post('example/{path}')
+public async exampleMethod(
+  @Path() path: string,
+  @Query() query: string,
+  @Body() body: ExampleRequest
+): Promise<void> {
+  // ...
+}
+```
+
+## Custom Example Labels in JSDoc
+
+```typescript
+/**
+ * @param res The alternate response
+ * @example res.NotFound {
+ *   "errorMessage": "Resource not found",
+ *   "errorCode": 404
+ * }
+ * @example res.BadRequest {
+ *   "errorMessage": "Invalid request",
+ *   "errorCode": 400
+ * }
+ * @example res {
+ *   "errorMessage": "Unlabeled error",
+ *   "errorCode": 500
+ * }
+ */
+@Get('data')
+public async getData(
+  @Res() res: TsoaResponse<400, ErrorResponse>
+): Promise<Data> {
+  // ...
+}
+```
+
+## Examples with @Produces
+
+```typescript
+import { Get, Route, Example, Produces } from 'tsoa';
+
+@Route('files')
+export class FileController {
+  @Produces('text/plain')
+  @Example<string>('This is a plain text response')
+  @Get('readme')
+  public async getReadme(): Promise<string> {
+    return await fileService.readReadme();
+  }
+  
+  @Produces('application/json')
+  @Produces('application/xml')
+  @Example<Data>({ id: 1, value: 'data' }, 'JSON Example')
+  @Example<Data>({ id: 2, value: 'more data' }, 'Another Example')
+  @Get('data')
+  public async getData(): Promise<Data> {
+    return await dataService.get();
+  }
+}
+```
+
+## Special Value Examples
+
+### Negative Numbers
+
+```typescript
+interface Document {
+  id: number;
+  description: string;
+}
+
+@Example<Document>({
+  id: -1,
+  description: 'Negative ID example'
+})
+@Get('document')
+public async getDocument(): Promise<Document> {
+  return { id: -1, description: 'test' };
+}
+```
+
+### Positive Numbers with Prefix
+
+```typescript
+@Example<Document>({
+  id: +1,
+  description: 'Positive ID example'
+})
+@Get('document')
+public async getDocument(): Promise<Document> {
+  return { id: 1, description: 'test' };
+}
+```
+
+## Interface-Level Examples
+
+Define examples on the interface itself using JSDoc:
+
+```typescript
+/**
+ * @example {
+ *   "country": "USA",
+ *   "city": "New York"
+ * }
+ */
+export interface Location {
+  country: string;
+  city: string;
+}
+
+@Route('locations')
+export class LocationController {
+  // Location interface example will be used automatically
+  @Post()
+  public async createLocation(
+    @Body() location: Location
+  ): Promise<Location> {
+    return await locationService.create(location);
+  }
+}
+```
+
+## Best Practices
+
+1. **Provide realistic examples**: Use data that resembles real-world usage
+
+2. **Show edge cases**: Include examples for optional fields, null values, and boundary conditions
+
+3. **Use descriptive labels**: When providing multiple examples, use clear labels that explain the scenario
+
+4. **Keep examples up to date**: Ensure examples match your current data models
+
+5. **Include various scenarios**: Show success cases, error cases, and different data variations
+
+6. **Use constants for reusable examples**: Define examples once and import them where needed
+
+## See Also
+
+- [Response Decorators](/api/decorators/response)
+- [Parameter Decorators](/api/decorators/parameters)
+- [@Produces Decorator](/api/decorators/response#produces)

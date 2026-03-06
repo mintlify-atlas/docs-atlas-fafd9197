@@ -1,0 +1,761 @@
+---
+title: tsoa.json Reference
+description: Complete schema reference for tsoa configuration files
+---
+
+This page documents every configuration option available in tsoa configuration files. For practical examples and guidance, see the [Configuration Guide](/cli/configuration).
+
+## Root Configuration
+
+<ResponseField name="entryFile" type="string">
+  The entry point to your API. This file should import (directly or indirectly) all controller files.
+  
+  ```json
+  "entryFile": "src/app.ts"
+  ```
+  
+  <Warning>
+    Either `entryFile` or `controllerPathGlobs` is required. Cannot use both.
+  </Warning>
+</ResponseField>
+
+<ResponseField name="controllerPathGlobs" type="string[]">
+  Array of glob patterns pointing to controller files. Alternative to `entryFile` that allows direct file selection.
+  
+  ```json
+  "controllerPathGlobs": [
+    "src/controllers/**/*Controller.ts",
+    "src/modules/**/controllers/*.ts"
+  ]
+  ```
+  
+  Supported glob patterns:
+  - `*` - Matches any characters except `/`
+  - `**` - Matches any characters including `/`
+  - `{a,b}` - Matches `a` or `b`
+  - `[abc]` - Matches any character in the set
+</ResponseField>
+
+<ResponseField name="spec" type="SpecConfig" required>
+  Configuration for OpenAPI specification generation. See [Spec Configuration](#spec-configuration) below.
+</ResponseField>
+
+<ResponseField name="routes" type="RoutesConfig" required>
+  Configuration for route handler generation. See [Routes Configuration](#routes-configuration) below.
+</ResponseField>
+
+<ResponseField name="noImplicitAdditionalProperties" type="enum">
+  Controls validation behavior for extra properties in request bodies.
+  
+  <Expandable title="options">
+    <ResponseField name="ignore" type="string" default>
+      Allow extra properties (no validation)
+    </ResponseField>
+    
+    <ResponseField name="silently-remove-extras" type="string">
+      Remove extra properties without error
+    </ResponseField>
+    
+    <ResponseField name="throw-on-extras" type="string">
+      Reject requests with 400 error when extra properties present
+    </ResponseField>
+  </Expandable>
+  
+  ```json
+  "noImplicitAdditionalProperties": "throw-on-extras"
+  ```
+</ResponseField>
+
+<ResponseField name="ignore" type="string[]">
+  Array of glob patterns for directories/files to ignore during TypeScript scanning.
+  
+  ```json
+  "ignore": [
+    "**/node_modules/**",
+    "**/test/**",
+    "**/*.spec.ts"
+  ]
+  ```
+</ResponseField>
+
+<ResponseField name="compilerOptions" type="Record<string, unknown>">
+  TypeScript compiler options to use during generation. Merged with options from `tsconfig.json`.
+  
+  ```json
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="defaultNumberType" type="enum" default="double">
+  Default OpenAPI type for TypeScript `number` when no type annotation present.
+  
+  Options: `"double"`, `"float"`, `"integer"`, `"long"`
+  
+  ```json
+  "defaultNumberType": "integer"
+  ```
+</ResponseField>
+
+<ResponseField name="multerOpts" type="MulterOptions">
+  <Warning>
+    Deprecated since v6.4.0. Pass multer options to `RegisterRoutes()` instead.
+  </Warning>
+  
+  Multer configuration for file uploads.
+  
+  ```json
+  "multerOpts": {
+    "dest": "/tmp/uploads"
+  }
+  ```
+</ResponseField>
+
+## Spec Configuration
+
+All properties under the `spec` key in your configuration:
+
+### Required Properties
+
+<ResponseField name="spec.outputDirectory" type="string" required>
+  Directory where the OpenAPI specification file will be written.
+  
+  ```json
+  "spec": {
+    "outputDirectory": "dist/docs"
+  }
+  ```
+</ResponseField>
+
+### Version and Format
+
+<ResponseField name="spec.specVersion" type="number" default={2}>
+  Major OpenAPI version to generate.
+  
+  Supported values:
+  - `2` - OpenAPI 2.0 (Swagger)
+  - `3` - OpenAPI 3.0.x
+  - `3.1` - OpenAPI 3.1.x
+  
+  ```json
+  "spec": {
+    "specVersion": 3
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.yaml" type="boolean" default={false}>
+  Generate YAML format instead of JSON.
+  
+  ```json
+  "spec": {
+    "yaml": true
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.specFileBaseName" type="string" default="swagger">
+  Base name of the output file (without extension).
+  
+  ```json
+  "spec": {
+    "specFileBaseName": "openapi"
+  }
+  ```
+  
+  With `yaml: true`, generates `openapi.yaml`. Otherwise, generates `openapi.json`.
+</ResponseField>
+
+### API Metadata
+
+<ResponseField name="spec.name" type="string">
+  API name. Defaults to `name` from `package.json`.
+  
+  ```json
+  "spec": {
+    "name": "My API"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.version" type="string">
+  API version. Defaults to `version` from `package.json`.
+  
+  ```json
+  "spec": {
+    "version": "2.0.0"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.description" type="string">
+  API description. Defaults to `description` from `package.json`.
+  
+  ```json
+  "spec": {
+    "description": "A comprehensive REST API for managing resources"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.license" type="string">
+  API license. Defaults to `license` from `package.json`.
+  
+  ```json
+  "spec": {
+    "license": "MIT"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.termsOfService" type="string">
+  Link to terms of service. Must be a valid URL.
+  
+  ```json
+  "spec": {
+    "termsOfService": "https://example.com/terms"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.contact" type="object">
+  Contact information for the API.
+  
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      Contact name. Defaults to author name from `package.json`.
+    </ResponseField>
+    
+    <ResponseField name="email" type="string">
+      Contact email. Defaults to author email from `package.json`.
+    </ResponseField>
+    
+    <ResponseField name="url" type="string">
+      Contact URL. Defaults to author URL from `package.json`.
+    </ResponseField>
+  </Expandable>
+  
+  ```json
+  "spec": {
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com",
+      "url": "https://example.com/support"
+    }
+  }
+  ```
+</ResponseField>
+
+### Server Configuration
+
+<ResponseField name="spec.host" type="string">
+  API host (OpenAPI 2.0 only). Format: `hostname[:port]`
+  
+  ```json
+  "spec": {
+    "specVersion": 2,
+    "host": "api.example.com"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.basePath" type="string" default="/">
+  Base path prepended to all API routes.
+  
+  ```json
+  "spec": {
+    "basePath": "/api/v1"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.schemes" type="string[]">
+  Transfer protocols (OpenAPI 2.0 only).
+  
+  Values: `"http"`, `"https"`, `"ws"`, `"wss"`
+  
+  ```json
+  "spec": {
+    "specVersion": 2,
+    "schemes": ["https", "http"]
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.servers" type="string[]">
+  Server URLs (OpenAPI 3.x only). Can include variables.
+  
+  ```json
+  "spec": {
+    "specVersion": 3,
+    "servers": [
+      "https://api.example.com/v1",
+      "https://staging.example.com/v1"
+    ]
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.disableBasePathPrefixSlash" type="boolean" default={false}>
+  Remove leading slash from basePath in server URLs (OpenAPI 3.x only).
+  
+  ```json
+  "spec": {
+    "basePath": "v1",
+    "disableBasePathPrefixSlash": true
+  }
+  ```
+  
+  Generates: `https://api.example.comv1` instead of `https://api.example.com/v1`
+</ResponseField>
+
+### Security Configuration
+
+<ResponseField name="spec.securityDefinitions" type="object">
+  Security schemes available in the API. Keys are security scheme names.
+  
+  <CodeGroup>
+  
+  ```json JWT Bearer
+  "spec": {
+    "securityDefinitions": {
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+  ```
+  
+  ```json API Key
+  "spec": {
+    "securityDefinitions": {
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      }
+    }
+  }
+  ```
+  
+  ```json OAuth2
+  "spec": {
+    "securityDefinitions": {
+      "oauth2": {
+        "type": "oauth2",
+        "authorizationUrl": "https://auth.example.com/oauth/authorize",
+        "tokenUrl": "https://auth.example.com/oauth/token",
+        "flow": "accessCode",
+        "scopes": {
+          "read:users": "Read user data",
+          "write:users": "Modify user data"
+        }
+      }
+    }
+  }
+  ```
+  
+  ```json Multiple Schemes
+  "spec": {
+    "securityDefinitions": {
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      }
+    }
+  }
+  ```
+  
+  </CodeGroup>
+</ResponseField>
+
+<ResponseField name="spec.rootSecurity" type="array">
+  Default security requirements applied to all endpoints. Can be overridden with `@Security` or `@NoSecurity` decorators.
+  
+  ```json
+  "spec": {
+    "securityDefinitions": {
+      "jwt": { "type": "http", "scheme": "bearer" }
+    },
+    "rootSecurity": [
+      { "jwt": [] }
+    ]
+  }
+  ```
+  
+  Requires JWT authentication on all endpoints unless overridden.
+</ResponseField>
+
+### Tags and Organization
+
+<ResponseField name="spec.tags" type="array">
+  Global tag definitions for API organization.
+  
+  ```json
+  "spec": {
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management endpoints"
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog operations"
+      }
+    ]
+  }
+  ```
+</ResponseField>
+
+### Advanced Options
+
+<ResponseField name="spec.operationIdTemplate" type="string" default="{{titleCase method.name}}">
+  Handlebars template for generating operation IDs.
+  
+  Available context:
+  - `controllerName` - Controller class name
+  - `method` - Method metadata object
+  - `method.name` - Method name
+  
+  Helpers:
+  - `titleCase` - Converts to title case
+  - `kebabCase` - Converts to kebab-case
+  
+  ```json
+  "spec": {
+    "operationIdTemplate": "{{controllerName}}_{{method.name}}"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.spec" type="unknown">
+  Custom OpenAPI properties to merge into the generated spec.
+  
+  ```json
+  "spec": {
+    "spec": {
+      "x-custom-property": "custom value",
+      "externalDocs": {
+        "description": "Find more info here",
+        "url": "https://example.com/docs"
+      }
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.specMerging" type="enum" default="immediate">
+  Strategy for merging `spec` property with generated specification.
+  
+  <Expandable title="options">
+    <ResponseField name="immediate" type="string">
+      Merge only top-level properties (default)
+    </ResponseField>
+    
+    <ResponseField name="recursive" type="string">
+      Deep merge all nested objects
+    </ResponseField>
+    
+    <ResponseField name="deepmerge" type="string">
+      Deep merge using ts-deepmerge (concatenates arrays)
+    </ResponseField>
+  </Expandable>
+  
+  ```json
+  "spec": {
+    "specMerging": "recursive"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.xEnumVarnames" type="boolean" default={false}>
+  Add `x-enum-varnames` extension for better enum handling in code generators.
+  
+  ```json
+  "spec": {
+    "xEnumVarnames": true
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="spec.useTitleTagsForInlineObjects" type="boolean" default={false}>
+  Generate titles for inline objects in requests/responses. Improves code generation consistency.
+  
+  ```json
+  "spec": {
+    "useTitleTagsForInlineObjects": true
+  }
+  ```
+</ResponseField>
+
+## Routes Configuration
+
+All properties under the `routes` key in your configuration:
+
+### Required Properties
+
+<ResponseField name="routes.routesDir" type="string" required>
+  Directory where the generated routes file will be written.
+  
+  ```json
+  "routes": {
+    "routesDir": "src/generated"
+  }
+  ```
+</ResponseField>
+
+### Middleware Configuration
+
+<ResponseField name="routes.middleware" type="enum">
+  Web framework to generate routes for.
+  
+  Options: `"express"`, `"koa"`, `"hapi"`
+  
+  ```json
+  "routes": {
+    "middleware": "express"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="routes.middlewareTemplate" type="string">
+  Path to custom middleware template. Allows complete customization of generated routes.
+  
+  ```json
+  "routes": {
+    "middlewareTemplate": "./templates/custom-routes.hbs"
+  }
+  ```
+</ResponseField>
+
+### Output Configuration
+
+<ResponseField name="routes.routesFileName" type="string" default="routes.ts">
+  Name of the generated routes file.
+  
+  ```json
+  "routes": {
+    "routesFileName": "tsoa-routes.ts"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="routes.basePath" type="string" default="/">
+  Base path prepended to all routes.
+  
+  ```json
+  "routes": {
+    "basePath": "/api/v1"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="routes.noWriteIfUnchanged" type="boolean" default={false}>
+  Skip writing routes file if content unchanged. Useful for watch mode.
+  
+  ```json
+  "routes": {
+    "noWriteIfUnchanged": true
+  }
+  ```
+</ResponseField>
+
+### Module Integration
+
+<ResponseField name="routes.authenticationModule" type="string">
+  Path to module exporting authentication function.
+  
+  ```json
+  "routes": {
+    "authenticationModule": "./auth/authentication.ts"
+  }
+  ```
+  
+  Module must export `expressAuthentication`, `koaAuthentication`, or `hapiAuthentication`:
+  
+  ```typescript
+  export async function expressAuthentication(
+    request: Request,
+    securityName: string,
+    scopes?: string[]
+  ): Promise<any> {
+    // Return user object or throw error
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="routes.iocModule" type="string">
+  Path to IoC container module.
+  
+  ```json
+  "routes": {
+    "iocModule": "./ioc/container.ts"
+  }
+  ```
+  
+  Module must export `iocContainer`:
+  
+  ```typescript
+  import { Container } from 'inversify';
+  export const iocContainer = new Container();
+  ```
+</ResponseField>
+
+### ES Modules Support
+
+<ResponseField name="routes.esm" type="boolean" default={false}>
+  Generate imports with `.js` extensions for ES modules.
+  
+  ```json
+  "routes": {
+    "esm": true
+  }
+  ```
+  
+  Generates:
+  ```typescript
+  import { UserController } from './controllers/userController.js';
+  ```
+</ResponseField>
+
+<ResponseField name="routes.rewriteRelativeImportExtensions" type="boolean" default={false}>
+  Keep `.ts` extensions in imports for TypeScript 5.7+ `rewriteRelativeImportExtensions` feature.
+  
+  ```json
+  "routes": {
+    "rewriteRelativeImportExtensions": true
+  }
+  ```
+</ResponseField>
+
+### Validation Options
+
+<ResponseField name="routes.bodyCoercion" type="boolean" default={true}>
+  Automatically coerce body parameters to expected types.
+  
+  ```json
+  "routes": {
+    "bodyCoercion": true
+  }
+  ```
+  
+  When enabled, strings are converted to numbers, booleans, etc. when the type signature expects them.
+</ResponseField>
+
+## Example Configurations
+
+### Minimal Configuration
+
+```json
+{
+  "entryFile": "src/app.ts",
+  "spec": {
+    "outputDirectory": "dist"
+  },
+  "routes": {
+    "routesDir": "src"
+  }
+}
+```
+
+### Complete Configuration
+
+```json
+{
+  "entryFile": "src/server.ts",
+  "controllerPathGlobs": ["src/controllers/**/*.ts"],
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "ignore": ["**/node_modules/**", "**/test/**"],
+  "defaultNumberType": "double",
+  "compilerOptions": {
+    "target": "ES2020",
+    "esModuleInterop": true
+  },
+  "spec": {
+    "outputDirectory": "docs",
+    "specVersion": 3,
+    "specFileBaseName": "openapi",
+    "yaml": true,
+    "name": "My API",
+    "version": "1.0.0",
+    "description": "A comprehensive REST API",
+    "license": "MIT",
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com"
+    },
+    "servers": ["https://api.example.com"],
+    "basePath": "/v1",
+    "securityDefinitions": {
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "rootSecurity": [{"jwt": []}],
+    "tags": [
+      {"name": "Users", "description": "User management"}
+    ],
+    "operationIdTemplate": "{{controllerName}}_{{method.name}}",
+    "xEnumVarnames": true
+  },
+  "routes": {
+    "routesDir": "src/generated",
+    "routesFileName": "routes.ts",
+    "middleware": "express",
+    "basePath": "/v1",
+    "authenticationModule": "./auth/authentication.ts",
+    "iocModule": "./ioc/container.ts",
+    "esm": false,
+    "bodyCoercion": true,
+    "noWriteIfUnchanged": true
+  }
+}
+```
+
+## Type Definitions
+
+tsoa exports TypeScript types for configuration:
+
+```typescript
+import type { Config, SpecConfig, RoutesConfig } from 'tsoa';
+
+const config: Config = {
+  entryFile: 'src/app.ts',
+  spec: {
+    outputDirectory: 'dist'
+  },
+  routes: {
+    routesDir: 'src'
+  }
+};
+
+export default config;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Configuration Guide" icon="book" href="/cli/configuration">
+  Practical examples and best practices
+</Card>
+
+<Card title="CLI Commands" icon="terminal" href="/cli/commands">
+  Learn about CLI commands and flags
+</Card>
+
+</CardGroup>

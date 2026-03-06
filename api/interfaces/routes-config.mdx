@@ -1,0 +1,578 @@
+---
+title: "RoutesConfig"
+description: "Route generation configuration for Express, Koa, or Hapi"
+---
+
+## Overview
+
+The `RoutesConfig` interface defines configuration options for generating route registration code for your chosen web framework. The generated routes file handles request validation, parameter extraction, and controller method invocation.
+
+## Required Properties
+
+### routesDir
+
+<ParamField path="routesDir" type="string" required>
+  Directory where the generated routes file will be written.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src"
+  }
+}
+```
+
+Generates: `src/routes.ts` (or custom filename if `routesFileName` is set)
+
+### middleware
+
+<ParamField path="middleware" type="'express' | 'koa' | 'hapi'" optional>
+  Web framework to generate routes for.
+  
+  If not specified, defaults to `'express'`.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+## Optional Properties
+
+### routesFileName
+
+<ParamField path="routesFileName" type="string" optional default="routes.ts">
+  Filename for the generated routes file.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src/generated",
+    "routesFileName": "tsoa-routes.ts"
+  }
+}
+```
+
+Generates: `src/generated/tsoa-routes.ts`
+
+### basePath
+
+<ParamField path="basePath" type="string" optional>
+  Base path prefix for all routes.
+  
+  Example: `"/api/v1"` makes routes accessible at `https://example.com/api/v1/*`
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "basePath": "/api/v1"
+  }
+}
+```
+
+**Example:**
+
+```typescript
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    // Without basePath: GET /users/{userId}
+    // With basePath "/api/v1": GET /api/v1/users/{userId}
+    return await userService.findById(userId);
+  }
+}
+```
+
+### noWriteIfUnchanged
+
+<ParamField path="noWriteIfUnchanged" type="boolean" optional default={false}>
+  Don't write the routes file if the content hasn't changed.
+  
+  Useful for optimizing watch processes and avoiding unnecessary rebuilds.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "noWriteIfUnchanged": true
+  }
+}
+```
+
+## Framework-Specific Options
+
+### middlewareTemplate
+
+<ParamField path="middlewareTemplate" type="string" optional>
+  Path to a custom middleware template file.
+  
+  Allows complete customization of the generated routes file.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middlewareTemplate": "./templates/custom-routes.hbs"
+  }
+}
+```
+
+## Dependency Injection
+
+### iocModule
+
+<ParamField path="iocModule" type="string" optional>
+  Path to IoC (Inversion of Control) container module.
+  
+  Used for dependency injection with InversifyJS or similar libraries.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "iocModule": "./src/inversify.config"
+  }
+}
+```
+
+**Example IoC Module:**
+
+```typescript
+// src/inversify.config.ts
+import { Container } from 'inversify';
+import { UserService } from './services/userService';
+import { UserController } from './controllers/userController';
+
+const iocContainer = new Container();
+
+iocContainer.bind<UserService>('UserService').to(UserService);
+iocContainer.bind<UserController>(UserController).toSelf();
+
+export { iocContainer };
+```
+
+**Controller with DI:**
+
+```typescript
+import { injectable, inject } from 'inversify';
+import { Controller, Get, Route } from 'tsoa';
+import { UserService } from '../services/userService';
+
+@injectable()
+@Route('users')
+export class UserController extends Controller {
+  constructor(
+    @inject('UserService') private userService: UserService
+  ) {
+    super();
+  }
+  
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await this.userService.findById(userId);
+  }
+}
+```
+
+## Authentication
+
+### authenticationModule
+
+<ParamField path="authenticationModule" type="string" optional>
+  Path to authentication module.
+  
+  Module should export an authentication function for your framework.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "authenticationModule": "./src/authentication"
+  }
+}
+```
+
+**Express Authentication Module:**
+
+```typescript
+// src/authentication.ts
+import { Request } from 'express';
+import * as jwt from 'jsonwebtoken';
+
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'bearer') {
+    const token = request.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+      
+      // Check scopes if provided
+      if (scopes && scopes.length > 0) {
+        const userScopes = (decoded as any).scopes || [];
+        const hasRequiredScopes = scopes.every(scope => 
+          userScopes.includes(scope)
+        );
+        
+        if (!hasRequiredScopes) {
+          throw new Error('Insufficient permissions');
+        }
+      }
+      
+      return decoded;
+    } catch (err) {
+      throw new Error('Invalid token');
+    }
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+**Koa Authentication Module:**
+
+```typescript
+// src/authentication.ts
+import { Context } from 'koa';
+import * as jwt from 'jsonwebtoken';
+
+export async function koaAuthentication(
+  context: Context,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'bearer') {
+    const token = context.header.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    return decoded;
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+**Hapi Authentication Module:**
+
+```typescript
+// src/authentication.ts
+import { Request } from '@hapi/hapi';
+import * as jwt from 'jsonwebtoken';
+
+export async function hapiAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'bearer') {
+    const token = request.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    return decoded;
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+## Module System Options
+
+### esm
+
+<ParamField path="esm" type="boolean" optional default={false}>
+  Add `.js` extensions to imports for ES module support.
+  
+  Required when using `"type": "module"` in `package.json`.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "esm": true
+  }
+}
+```
+
+**Generated imports with ESM:**
+
+```typescript
+import { UserController } from './controllers/userController.js';
+import { ProductController } from './controllers/productController.js';
+```
+
+### rewriteRelativeImportExtensions
+
+<ParamField path="rewriteRelativeImportExtensions" type="boolean" optional default={false}>
+  Keep `.ts` extensions in imports for TypeScript 5.7+ `rewriteRelativeImportExtensions` feature.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "rewriteRelativeImportExtensions": true
+  }
+}
+```
+
+**Generated imports:**
+
+```typescript
+import { UserController } from './controllers/userController.ts';
+```
+
+## Validation Options
+
+### bodyCoercion
+
+<ParamField path="bodyCoercion" type="boolean" optional default={true}>
+  Implicitly coerce body parameters to their declared types.
+  
+  When `true`, strings like `"123"` are converted to numbers if the parameter type is `number`.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "bodyCoercion": true
+  }
+}
+```
+
+**Example:**
+
+```typescript
+interface CreateUserRequest {
+  age: number;
+  active: boolean;
+}
+
+@Post('users')
+public async createUser(@Body() body: CreateUserRequest): Promise<User> {
+  // With bodyCoercion: true
+  // Request: { "age": "25", "active": "true" }
+  // Body received: { age: 25, active: true }
+  
+  // With bodyCoercion: false
+  // Request: { "age": "25", "active": "true" }
+  // Validation error: age must be a number
+  
+  return await userService.create(body);
+}
+```
+
+## File Upload Configuration
+
+### multerOpts (Deprecated)
+
+<ParamField path="multerOpts" type="MulterOpts" optional deprecated>
+  Multer options for file upload handling.
+  
+  **Deprecated:** Pass multer options to `RegisterRoutes` instead.
+</ParamField>
+
+**Modern approach (recommended):**
+
+```typescript
+import express from 'express';
+import multer from 'multer';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+
+const multerOpts = {
+  dest: '/tmp/uploads',
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 5
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images allowed'));
+    }
+  }
+};
+
+RegisterRoutes(app, { multerOpts });
+```
+
+## Complete Examples
+
+### Minimal Configuration
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+### Development Configuration
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "basePath": "/api",
+    "noWriteIfUnchanged": true
+  }
+}
+```
+
+### Production Configuration
+
+```json
+{
+  "routes": {
+    "routesDir": "src/generated",
+    "routesFileName": "routes.ts",
+    "middleware": "express",
+    "basePath": "/api/v2",
+    "authenticationModule": "./src/authentication",
+    "iocModule": "./src/inversify.config",
+    "noWriteIfUnchanged": true,
+    "bodyCoercion": true
+  }
+}
+```
+
+### ESM Project
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "esm": true,
+    "basePath": "/api"
+  }
+}
+```
+
+### Koa with Authentication
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "koa",
+    "basePath": "/api/v1",
+    "authenticationModule": "./src/authentication"
+  }
+}
+```
+
+### Hapi with IoC
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "hapi",
+    "iocModule": "./src/inversify.config",
+    "basePath": "/api"
+  }
+}
+```
+
+## Framework Usage
+
+### Express
+
+```typescript
+import express from 'express';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+### Koa
+
+```typescript
+import Koa from 'koa';
+import bodyParser from 'koa-bodyparser';
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+
+app.use(bodyParser());
+
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+### Hapi
+
+```typescript
+import Hapi from '@hapi/hapi';
+import { RegisterRoutes } from './routes';
+
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost'
+});
+
+const init = async () => {
+  await RegisterRoutes(server);
+  await server.start();
+};
+
+init();
+```
+
+## See Also
+
+- [Config Interface](/api/interfaces/config)
+- [SpecConfig Interface](/api/interfaces/spec-config)
+- [generateRoutes Function](/api/functions/generate-routes)
+- [Security Decorators](/api/decorators/security)

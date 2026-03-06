@@ -1,122 +1,118 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "tsoa",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#3178c6",
+    "light": "#5599ff",
+    "dark": "#264f78"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/lukeautry/tsoa"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/lukeautry/tsoa"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/controllers",
+              "concepts/decorators",
+              "concepts/models",
+              "concepts/validation",
+              "concepts/authentication",
+              "concepts/responses"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "CLI & Configuration",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "cli/overview",
+              "cli/commands",
+              "cli/configuration",
+              "cli/tsoa-config"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/express-setup",
+              "guides/koa-setup",
+              "guides/hapi-setup",
+              "guides/file-uploads",
+              "guides/dependency-injection",
+              "guides/custom-templates",
+              "guides/openapi-versions"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/custom-route-generator",
+              "advanced/middleware",
+              "advanced/error-handling",
+              "advanced/testing"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/v6-to-v7",
+              "migration/upgrade-guide"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Decorators",
             "pages": [
-              "api-reference/introduction"
+              "api/decorators/route",
+              "api/decorators/methods",
+              "api/decorators/parameters",
+              "api/decorators/response",
+              "api/decorators/security",
+              "api/decorators/tags",
+              "api/decorators/example"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Functions",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/functions/generate-spec",
+              "api/functions/generate-routes"
+            ]
+          },
+          {
+            "group": "Interfaces",
+            "pages": [
+              "api/interfaces/config",
+              "api/interfaces/spec-config",
+              "api/interfaces/routes-config"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

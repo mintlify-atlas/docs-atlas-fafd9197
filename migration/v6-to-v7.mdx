@@ -1,0 +1,420 @@
+---
+title: Migrating from v6 to v7
+description: Guide for upgrading tsoa from version 6.x to 7.x
+---
+
+## Overview
+
+tsoa v7.0.0 introduces OpenAPI 3.1.0 support, enhanced TypeScript compatibility, and several improvements to validation and type handling. This guide will help you migrate from v6.x to v7.x.
+
+<Warning>
+  tsoa v7.0.0 is currently in alpha. Use in production environments at your own risk.
+</Warning>
+
+## Prerequisites
+
+Before upgrading, ensure your project meets these requirements:
+
+- **Node.js**: v18.0.0 or higher (unchanged from v6)
+- **TypeScript**: v5.2.2 or higher
+- **Yarn**: v1.9.4 or higher (if using Yarn)
+
+## Breaking Changes
+
+### OpenAPI 3.1.0 Support
+
+tsoa v7 adds support for OpenAPI 3.1.0, which is now the default specification version when `specVersion` is set to `3.1` in your configuration.
+
+<Steps>
+  <Step title="Update specVersion configuration">
+    If you want to use OpenAPI 3.1.0, update your `tsoa.json` configuration:
+
+    ```json tsoa.json
+    {
+      "spec": {
+        "specVersion": 3.1,
+        "outputDirectory": "build",
+        "specFileBaseName": "openapi"
+      }
+    }
+    ```
+
+    <Warning>
+      OpenAPI 3.1.0 has differences from 3.0.x. Ensure your API consumers support 3.1.0 before upgrading.
+    </Warning>
+  </Step>
+
+  <Step title="Review schema changes">
+    OpenAPI 3.1.0 schemas are more aligned with JSON Schema. Key differences include:
+
+    - Use of `const` instead of single-value `enum`
+    - Support for `prefixItems` for tuple validation
+    - Enhanced `$ref` handling
+    - Support for `$defs` alongside `definitions`
+  </Step>
+</Steps>
+
+### Validation Improvements
+
+#### Circular Reference Handling
+
+v7 includes improved handling of circular references in validation schemas.
+
+```typescript Before (v6)
+// Circular references could cause validation errors
+interface Node {
+  value: string;
+  children: Node[]; // This might cause issues in v6
+}
+```
+
+```typescript After (v7)
+// Circular references are properly handled
+interface Node {
+  value: string;
+  children: Node[]; // Works correctly in v7
+}
+```
+
+#### Deep Model Error Output
+
+Validation error messages for deeply nested models have been trimmed to prevent output explosion:
+
+```typescript
+interface DeepModel {
+  level1: {
+    level2: {
+      level3: {
+        value: string;
+      };
+    };
+  };
+}
+
+// v7 produces more concise error messages
+// for validation failures in deeply nested structures
+```
+
+### Type System Enhancements
+
+#### Zod Infer Type Support
+
+tsoa v7 adds support for Zod's `infer` type on response types:
+
+```typescript
+import { z } from 'zod';
+
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+});
+
+type User = z.infer<typeof UserSchema>;
+
+@Route('users')
+export class UserController extends Controller {
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    // v7 properly resolves the inferred type
+    return { id: userId, name: 'John', email: 'john@example.com' };
+  }
+}
+```
+
+#### Generic Type Resolution
+
+Improved generic type resolution for query parameters:
+
+```typescript
+interface PaginatedQuery<T> {
+  page: number;
+  limit: number;
+  filter?: T;
+}
+
+@Get('items')
+public async getItems(
+  @Query() query: PaginatedQuery<{ status: string }>,
+): Promise<Item[]> {
+  // Generic types are now properly resolved in v7
+}
+```
+
+## New Features
+
+### OpenAPI 3.1.0 Schema Generation
+
+When using `specVersion: 3.1`, tsoa generates OpenAPI 3.1.0-compliant schemas:
+
+<CodeGroup>
+```json OpenAPI 3.0.x
+{
+  "type": "string",
+  "enum": ["active"]
+}
+```
+
+```json OpenAPI 3.1.0
+{
+  "type": "string",
+  "const": "active"
+}
+```
+</CodeGroup>
+
+### Tuple Type Support
+
+OpenAPI 3.1.0 introduces better tuple support using `prefixItems`:
+
+```typescript
+type Coordinate = [number, number];
+type NamedCoordinate = [string, number, number];
+
+interface Location {
+  position: Coordinate; // [longitude, latitude]
+  namedPosition: NamedCoordinate; // [name, longitude, latitude]
+}
+```
+
+In OpenAPI 3.1.0, this generates:
+
+```json
+{
+  "position": {
+    "type": "array",
+    "prefixItems": [
+      { "type": "number" },
+      { "type": "number" }
+    ],
+    "minItems": 2,
+    "maxItems": 2
+  }
+}
+```
+
+### Enhanced Status Code Support
+
+Support for HTTP 425 Too Early status code:
+
+```typescript
+@Response<ErrorResponse>(425, 'Too Early')
+@Post('process')
+public async processRequest(): Promise<SuccessResponse> {
+  // Handle early requests
+}
+```
+
+### Base Path Slash Options
+
+Improved handling of base path slashes for more flexible routing:
+
+```typescript tsoa.json
+{
+  "routes": {
+    "basePath": "/api/v1",
+    "routesDir": "./src"
+  }
+}
+```
+
+v7 properly handles both `/api/v1` and `api/v1` configurations.
+
+## Migration Steps
+
+<Steps>
+  <Step title="Update dependencies">
+    Update your `package.json` to use tsoa v7:
+
+    ```json package.json
+    {
+      "dependencies": {
+        "tsoa": "^7.0.0-alpha.0"
+      },
+      "devDependencies": {
+        "@types/node": "^18.0.0",
+        "typescript": "^5.7.2"
+      }
+    }
+    ```
+
+    Then install:
+
+    ```bash
+    npm install
+    # or
+    yarn install
+    ```
+  </Step>
+
+  <Step title="Update TypeScript configuration">
+    Ensure your `tsconfig.json` uses TypeScript 5.x features:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "Node16",
+        "moduleResolution": "Node16",
+        "esModuleInterop": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Choose your OpenAPI version">
+    Decide whether to use OpenAPI 3.0.x or 3.1.0:
+
+    <Accordion title="Using OpenAPI 3.0.x (Recommended for compatibility)">
+      Keep your existing configuration:
+
+      ```json tsoa.json
+      {
+        "spec": {
+          "specVersion": 3,
+          // ... other config
+        }
+      }
+      ```
+    </Accordion>
+
+    <Accordion title="Using OpenAPI 3.1.0 (New features)">
+      Update to OpenAPI 3.1.0:
+
+      ```json tsoa.json
+      {
+        "spec": {
+          "specVersion": 3.1,
+          // ... other config
+        }
+      }
+      ```
+
+      <Warning>
+        Verify that your API documentation tools and clients support OpenAPI 3.1.0.
+      </Warning>
+    </Accordion>
+  </Step>
+
+  <Step title="Regenerate routes and spec">
+    Regenerate your routes and OpenAPI specification:
+
+    ```bash
+    npx tsoa spec-and-routes
+    ```
+  </Step>
+
+  <Step title="Test validation">
+    Test your API thoroughly, especially:
+
+    - Circular reference models
+    - Deep nested object validation
+    - Generic type parameters
+    - Tuple types (if using OpenAPI 3.1.0)
+  </Step>
+
+  <Step title="Update API documentation">
+    If using OpenAPI 3.1.0, update your API documentation tooling:
+
+    - Swagger UI: Use version 4.15.0 or higher
+    - Redoc: Use version 2.0.0 or higher
+    - Postman: Ensure you're using a recent version
+  </Step>
+</Steps>
+
+## Deprecated Features
+
+### Multer Options in Config
+
+The `multerOpts` configuration option in `tsoa.json` is now deprecated:
+
+```json Deprecated (Still works in v7)
+{
+  "multerOpts": {
+    "dest": "/tmp"
+  }
+}
+```
+
+```typescript Recommended
+import { RegisterRoutes } from './routes';
+import multer from 'multer';
+
+const upload = multer({ dest: '/tmp' });
+
+RegisterRoutes(app, {
+  multer: upload,
+});
+```
+
+<Warning>
+  `multerOpts` in config will be removed in a future version. Migrate to passing multer options to `RegisterRoutes`.
+</Warning>
+
+## Package Structure
+
+tsoa v7 maintains the same package structure as v6:
+
+- `tsoa`: Main package (includes both CLI and runtime)
+- `@tsoa/cli`: CLI tools for code generation
+- `@tsoa/runtime`: Runtime decorators and types
+
+All packages are at version `7.0.0-alpha.0`.
+
+## Dependency Updates
+
+Key dependency updates in v7:
+
+| Package | v6 | v7 |
+|---------|----|----|  
+| TypeScript | ^5.3.3 | ^5.7.2 |
+| Node.js | >=18.0.0 | >=18.0.0 |
+| validator | ^13.11.0 | ^13.12.0 |
+| glob | ^10.3.10 | ^10.4.5+ |
+| reflect-metadata | ^0.1.13 | ^0.2.2 |
+
+## Rollback Plan
+
+If you encounter issues with v7, you can rollback to v6:
+
+```json package.json
+{
+  "dependencies": {
+    "tsoa": "^6.6.1"
+  }
+}
+```
+
+Then reinstall dependencies and regenerate:
+
+```bash
+npm install
+npx tsoa spec-and-routes
+```
+
+## Getting Help
+
+If you encounter migration issues:
+
+- Check the [GitHub Issues](https://github.com/lukeautry/tsoa/issues)
+- Review the [v7.0.0-alpha.0 release notes](https://github.com/lukeautry/tsoa/releases/tag/v7.0.0-alpha.0)
+- Join the discussion on [GitHub Discussions](https://github.com/lukeautry/tsoa/discussions)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Reference" icon="gear" href="/cli/tsoa-config">
+    Review all configuration options for tsoa v7
+  </Card>
+  <Card title="OpenAPI Versions" icon="book" href="/guides/openapi-versions">
+    Learn about OpenAPI 3.0.x vs 3.1.0 differences
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Understand validation improvements in v7
+  </Card>
+  <Card title="GitHub Releases" icon="github" href="https://github.com/lukeautry/tsoa/releases">
+    View all release notes and changelogs
+  </Card>
+</CardGroup>

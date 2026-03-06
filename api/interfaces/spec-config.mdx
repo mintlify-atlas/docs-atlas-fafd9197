@@ -1,0 +1,679 @@
+---
+title: "SpecConfig"
+description: "OpenAPI specification generation configuration"
+---
+
+## Overview
+
+The `SpecConfig` interface defines configuration options for generating OpenAPI specifications from your tsoa controllers. It controls the output format, API metadata, security definitions, and more.
+
+## Required Properties
+
+### outputDirectory
+
+<ParamField path="outputDirectory" type="string" required>
+  Directory where the generated OpenAPI specification file will be written.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist"
+  }
+}
+```
+
+Generates: `dist/swagger.json` (or `dist/swagger.yaml` if `yaml: true`)
+
+## Optional Properties
+
+### specFileBaseName
+
+<ParamField path="specFileBaseName" type="string" optional default="swagger">
+  Base name for the generated specification file (without extension).
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specFileBaseName": "openapi"
+  }
+}
+```
+
+Generates: `dist/openapi.json`
+
+### yaml
+
+<ParamField path="yaml" type="boolean" optional default={false}>
+  Generate YAML output instead of JSON.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "yaml": true
+  }
+}
+```
+
+Generates: `dist/swagger.yaml`
+
+### specVersion
+
+<ParamField path="specVersion" type="2 | 3 | 3.1" optional default={2}>
+  Major OpenAPI version to generate.
+  
+  - `2`: Swagger 2.0 (deprecated)
+  - `3`: OpenAPI 3.0.x (recommended)
+  - `3.1`: OpenAPI 3.1.x (latest)
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  }
+}
+```
+
+## API Metadata
+
+### name
+
+<ParamField path="name" type="string" optional>
+  API name. Defaults to the `name` field from `package.json`.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "name": "E-Commerce API"
+  }
+}
+```
+
+### version
+
+<ParamField path="version" type="string" optional>
+  API version. Defaults to the `version` field from `package.json`.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "version": "2.1.0"
+  }
+}
+```
+
+### description
+
+<ParamField path="description" type="string" optional>
+  API description. Defaults to the `description` field from `package.json`.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "description": "RESTful API for managing e-commerce operations"
+  }
+}
+```
+
+### license
+
+<ParamField path="license" type="string" optional>
+  API license. Defaults to the `license` field from `package.json`.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "license": "MIT"
+  }
+}
+```
+
+### termsOfService
+
+<ParamField path="termsOfService" type="string" optional>
+  Link to the terms of service. Must be a valid URL.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "termsOfService": "https://example.com/terms"
+  }
+}
+```
+
+### contact
+
+<ParamField path="contact" type="object" optional>
+  Contact information for the API.
+</ParamField>
+
+<Expandable title="Contact Object Properties">
+  <ParamField path="name" type="string" optional>
+    Contact name. Defaults to npm package author.
+  </ParamField>
+  
+  <ParamField path="email" type="string" optional>
+    Contact email. Defaults to npm package author email.
+  </ParamField>
+  
+  <ParamField path="url" type="string" optional>
+    Contact URL. Defaults to npm package author URL.
+  </ParamField>
+</Expandable>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "contact": {
+      "name": "API Support Team",
+      "email": "support@example.com",
+      "url": "https://example.com/support"
+    }
+  }
+}
+```
+
+## Server Configuration
+
+### host
+
+<ParamField path="host" type="string" optional>
+  API host (for OpenAPI 2.0).
+  
+  Example: `localhost:3000` or `api.example.com`
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 2,
+    "host": "api.example.com"
+  }
+}
+```
+
+### servers
+
+<ParamField path="servers" type="string[]" optional>
+  API servers (for OpenAPI 3.x).
+  
+  Example: `["https://api.example.com", "https://staging.api.example.com"]`
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "servers": [
+      "https://api.example.com",
+      "https://staging.api.example.com"
+    ]
+  }
+}
+```
+
+### basePath
+
+<ParamField path="basePath" type="string" optional>
+  Base API path prefix.
+  
+  Example: `/v1` results in `https://api.example.com/v1`
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "basePath": "/api/v2"
+  }
+}
+```
+
+### disableBasePathPrefixSlash
+
+<ParamField path="disableBasePathPrefixSlash" type="boolean" optional default={false}>
+  Disable the leading slash in base path (OpenAPI 3.x only).
+  
+  When `true`, `basePath: "v1"` becomes `https://api.comv1` instead of `https://api.com/v1`
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "disableBasePathPrefixSlash": true
+  }
+}
+```
+
+### schemes
+
+<ParamField path="schemes" type="('http' | 'https' | 'ws' | 'wss')[]" optional>
+  Transfer protocols supported by the API (OpenAPI 2.0).
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 2,
+    "schemes": ["https", "http"]
+  }
+}
+```
+
+## Security Configuration
+
+### securityDefinitions
+
+<ParamField path="securityDefinitions" type="object" optional>
+  Security scheme definitions for the API.
+  
+  Keys are security scheme names, values are security scheme objects.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "securityDefinitions": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://example.com/oauth/authorize",
+            "tokenUrl": "https://example.com/oauth/token",
+            "scopes": {
+              "read:users": "Read user data",
+              "write:users": "Modify user data",
+              "admin": "Administrative access"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+<Expandable title="Common Security Schemes">
+
+#### HTTP Bearer (JWT)
+
+```json
+{
+  "bearer": {
+    "type": "http",
+    "scheme": "bearer",
+    "bearerFormat": "JWT"
+  }
+}
+```
+
+#### API Key (Header)
+
+```json
+{
+  "api_key": {
+    "type": "apiKey",
+    "name": "X-API-Key",
+    "in": "header"
+  }
+}
+```
+
+#### API Key (Query)
+
+```json
+{
+  "api_key": {
+    "type": "apiKey",
+    "name": "api_key",
+    "in": "query"
+  }
+}
+```
+
+#### HTTP Basic Auth
+
+```json
+{
+  "basic": {
+    "type": "http",
+    "scheme": "basic"
+  }
+}
+```
+
+#### OAuth2
+
+```json
+{
+  "oauth2": {
+    "type": "oauth2",
+    "flows": {
+      "authorizationCode": {
+        "authorizationUrl": "https://example.com/oauth/authorize",
+        "tokenUrl": "https://example.com/oauth/token",
+        "scopes": {
+          "read": "Read access",
+          "write": "Write access"
+        }
+      }
+    }
+  }
+}
+```
+
+#### OpenID Connect
+
+```json
+{
+  "openid": {
+    "type": "openIdConnect",
+    "openIdConnectUrl": "https://example.com/.well-known/openid-configuration"
+  }
+}
+```
+
+</Expandable>
+
+### rootSecurity
+
+<ParamField path="rootSecurity" type="Security[]" optional>
+  Default security requirements applied to all endpoints.
+  
+  Can be overridden with `@Security` or `@NoSecurity` decorators.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "securityDefinitions": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "rootSecurity": [
+      { "bearer": [] }
+    ]
+  }
+}
+```
+
+## Tags
+
+### tags
+
+<ParamField path="tags" type="Tag[]" optional>
+  Tag definitions with descriptions and external documentation.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management operations",
+        "externalDocs": {
+          "description": "User API Documentation",
+          "url": "https://docs.example.com/users"
+        }
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog management"
+      },
+      {
+        "name": "Orders",
+        "description": "Order processing and fulfillment"
+      }
+    ]
+  }
+}
+```
+
+## Advanced Options
+
+### spec
+
+<ParamField path="spec" type="unknown" optional>
+  Additional properties to merge into the generated specification.
+  
+  Generated properties always take precedence.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "spec": {
+      "x-api-id": "my-custom-api",
+      "x-logo": {
+        "url": "https://example.com/logo.png"
+      },
+      "externalDocs": {
+        "description": "Full Documentation",
+        "url": "https://docs.example.com"
+      }
+    }
+  }
+}
+```
+
+### specMerging
+
+<ParamField path="specMerging" type="'immediate' | 'recursive' | 'deepmerge'" optional default="immediate">
+  Strategy for merging the `spec` object with generated specification.
+  
+  - `'immediate'`: Only merge top-level properties
+  - `'recursive'`: Deep merge using `merge` package
+  - `'deepmerge'`: Deep merge using `ts-deepmerge` package
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specMerging": "recursive"
+  }
+}
+```
+
+### operationIdTemplate
+
+<ParamField path="operationIdTemplate" type="string" optional default="{{titleCase method.name}}">
+  Handlebars template for generating operation IDs.
+  
+  Context:
+  - `controllerName`: Controller class name
+  - `method`: Method metadata object
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "operationIdTemplate": "{{controllerName}}_{{method.name}}"
+  }
+}
+```
+
+**Example output:**
+
+```typescript
+// Controller: UserController
+// Method: getUser
+
+// Default template: "GetUser"
+// Custom template: "UserController_getUser"
+```
+
+### xEnumVarnames
+
+<ParamField path="xEnumVarnames" type="boolean" optional default={false}>
+  Enable `x-enum-varnames` extension for enum values.
+  
+  Useful for code generators that need the original enum member names.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "xEnumVarnames": true
+  }
+}
+```
+
+**Example:**
+
+```typescript
+enum UserRole {
+  Administrator = 'admin',
+  Editor = 'editor',
+  Viewer = 'viewer'
+}
+
+// Generated OpenAPI with xEnumVarnames: true
+{
+  "type": "string",
+  "enum": ["admin", "editor", "viewer"],
+  "x-enum-varnames": ["Administrator", "Editor", "Viewer"]
+}
+```
+
+### useTitleTagsForInlineObjects
+
+<ParamField path="useTitleTagsForInlineObjects" type="boolean" optional default={false}>
+  Set titles for inline objects in responses and request bodies.
+  
+  Helps generate more consistent client code.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "useTitleTagsForInlineObjects": true
+  }
+}
+```
+
+## Complete Examples
+
+### Minimal Configuration
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  }
+}
+```
+
+### Development Configuration
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "name": "My API",
+    "version": "1.0.0",
+    "description": "API for development",
+    "host": "localhost:3000",
+    "schemes": ["http"]
+  }
+}
+```
+
+### Production Configuration
+
+```json
+{
+  "spec": {
+    "outputDirectory": "public/api-docs",
+    "specFileBaseName": "openapi",
+    "yaml": true,
+    "specVersion": 3,
+    "name": "E-Commerce API",
+    "version": "2.1.0",
+    "description": "Production API for e-commerce platform",
+    "license": "MIT",
+    "termsOfService": "https://example.com/terms",
+    "contact": {
+      "name": "API Support",
+      "email": "api@example.com",
+      "url": "https://example.com/support"
+    },
+    "servers": [
+      "https://api.example.com",
+      "https://staging.api.example.com"
+    ],
+    "basePath": "/v2",
+    "securityDefinitions": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "rootSecurity": [
+      { "bearer": [] }
+    ],
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management"
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog"
+      }
+    ]
+  }
+}
+```
+
+## See Also
+
+- [Config Interface](/api/interfaces/config)
+- [RoutesConfig Interface](/api/interfaces/routes-config)
+- [generateSpec Function](/api/functions/generate-spec)
+- [Security Decorators](/api/decorators/security)

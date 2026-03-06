@@ -1,0 +1,932 @@
+---
+title: 'Validation'
+description: 'Add runtime validation to your API with JSDoc validation tags'
+icon: 'shield-check'
+---
+
+## Overview
+
+tsoa provides automatic runtime validation based on TypeScript types and JSDoc validation tags. Validation rules are enforced at runtime and automatically documented in your OpenAPI specification.
+
+<Note>
+  Validation is performed automatically before your controller method executes. Invalid requests return a 400 Bad Request response with detailed error messages.
+</Note>
+
+## Type-Based Validation
+
+Basic validation is automatically inferred from TypeScript types:
+
+```typescript
+import { Route, Post, Body } from '@tsoa/runtime';
+
+export interface CreateUserRequest {
+  email: string;        // Must be a string
+  age: number;          // Must be a number
+  isActive: boolean;    // Must be a boolean
+  registeredAt: Date;   // Must be a valid date
+}
+
+@Route('users')
+export class UserController {
+  @Post()
+  public async createUser(
+    @Body() request: CreateUserRequest
+  ): Promise<User> {
+    // TypeScript types are validated automatically:
+    // - email must be string
+    // - age must be number
+    // - isActive must be boolean
+    // - registeredAt must be valid date
+    return await userService.create(request);
+  }
+}
+```
+
+## String Validation
+
+### Length Constraints
+
+Validate string length using `@minLength` and `@maxLength`:
+
+```typescript
+export interface User {
+  /**
+   * @minLength 3
+   * @maxLength 50
+   */
+  username: string;
+  
+  /**
+   * @minLength 8
+   * @maxLength 100
+   */
+  password: string;
+  
+  /**
+   * @maxLength 500
+   */
+  bio?: string;
+}
+
+@Route('users')
+export class UserController {
+  /**
+   * @param username User's username
+   * @minLength username 3
+   * @maxLength username 20
+   */
+  @Get('{username}')
+  public async getUser(username: string): Promise<User> {
+    return await userService.getByUsername(username);
+  }
+}
+```
+
+### Pattern Matching
+
+Validate strings against regular expressions:
+
+```typescript
+export interface ContactInfo {
+  /**
+   * @pattern ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+   */
+  email: string;
+  
+  /**
+   * @pattern ^\+?[1-9]\d{1,14}$
+   */
+  phone: string;
+  
+  /**
+   * @pattern ^[0-9]{5}(-[0-9]{4})?$
+   */
+  zipCode: string;
+  
+  /**
+   * @pattern ^https?://
+   */
+  website?: string;
+}
+```
+
+### Format Validation
+
+Use standard formats for common string types:
+
+```typescript
+export interface Account {
+  /**
+   * @format email
+   */
+  email: string;
+  
+  /**
+   * @format password
+   */
+  password: string;
+  
+  /**
+   * @format uri
+   */
+  profileUrl: string;
+  
+  /**
+   * @format date
+   */
+  birthDate: string;
+  
+  /**
+   * @format date-time
+   */
+  lastLogin: string;
+  
+  /**
+   * @format uuid
+   */
+  userId: string;
+}
+```
+
+<Note>
+  Supported formats: `email`, `password`, `uri`, `url`, `uuid`, `date`, `date-time`, `byte`, `binary`, `hostname`, `ipv4`, `ipv6`
+</Note>
+
+### String Type Validation
+
+Explicitly validate that a value is a string:
+
+```typescript
+@Route('search')
+export class SearchController {
+  /**
+   * Search for items
+   * @param query Search query string
+   * @isString query Custom error message for non-string values
+   * @minLength query 3
+   * @maxLength query 100
+   */
+  @Get()
+  public async search(query: string): Promise<SearchResults> {
+    return await searchService.search(query);
+  }
+}
+```
+
+## Number Validation
+
+### Range Constraints
+
+Validate numeric ranges:
+
+```typescript
+export interface Product {
+  /**
+   * @minimum 0
+   * @maximum 999999
+   */
+  price: number;
+  
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  discountPercentage: number;
+  
+  /**
+   * @minimum 1
+   */
+  quantity: number;
+}
+
+@Route('products')
+export class ProductController {
+  /**
+   * Get products with filters
+   * @param minPrice Minimum price filter
+   * @param maxPrice Maximum price filter
+   * @minimum minPrice 0
+   * @maximum maxPrice 1000000
+   */
+  @Get()
+  public async getProducts(
+    @Query() minPrice?: number,
+    @Query() maxPrice?: number
+  ): Promise<Product[]> {
+    return await productService.filter({ minPrice, maxPrice });
+  }
+}
+```
+
+### Integer Validation
+
+Ensure values are integers:
+
+```typescript
+export interface PageRequest {
+  /**
+   * @isInt
+   * @minimum 1
+   */
+  page: number;
+  
+  /**
+   * @isInt
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize: number;
+}
+
+@Route('items')
+export class ItemController {
+  /**
+   * @param id Item identifier
+   * @isInt id
+   * @minimum id 1
+   */
+  @Get('{id}')
+  public async getItem(id: number): Promise<Item> {
+    return await itemService.getById(id);
+  }
+}
+```
+
+### Float/Double Validation
+
+Validate floating-point numbers:
+
+```typescript
+export interface Measurement {
+  /**
+   * @isFloat
+   * @minimum 0
+   * @maximum 100
+   */
+  temperature: number;
+  
+  /**
+   * @isDouble
+   * @minimum -180
+   * @maximum 180
+   */
+  longitude: number;
+  
+  /**
+   * @isDouble
+   * @minimum -90
+   * @maximum 90
+   */
+  latitude: number;
+}
+```
+
+## Array Validation
+
+### Array Length
+
+Validate array sizes:
+
+```typescript
+export interface Order {
+  /**
+   * @minItems 1 Must have at least one item
+   * @maxItems 50 Cannot exceed 50 items
+   */
+  items: OrderItem[];
+  
+  /**
+   * @minItems 1
+   * @maxItems 5
+   */
+  tags: string[];
+}
+
+@Route('orders')
+export class OrderController {
+  /**
+   * Create bulk orders
+   * @param orders Array of orders to create
+   * @minItems orders 1
+   * @maxItems orders 100
+   */
+  @Post('bulk')
+  public async createBulk(
+    @Body() orders: Order[]
+  ): Promise<Order[]> {
+    return await orderService.createMany(orders);
+  }
+}
+```
+
+### Unique Items
+
+Ensure array items are unique:
+
+```typescript
+export interface Tag {
+  /**
+   * @uniqueItems true
+   */
+  categories: string[];
+}
+```
+
+## Enum Validation
+
+Enums are automatically validated:
+
+```typescript
+export enum UserRole {
+  Admin = 'admin',
+  Moderator = 'moderator',
+  User = 'user',
+  Guest = 'guest'
+}
+
+export enum OrderStatus {
+  Pending = 'pending',
+  Processing = 'processing',
+  Shipped = 'shipped',
+  Delivered = 'delivered'
+}
+
+export interface User {
+  id: number;
+  name: string;
+  role: UserRole;  // Must be one of: admin, moderator, user, guest
+}
+
+@Route('orders')
+export class OrderController {
+  @Get('status/{status}')
+  public async getByStatus(
+    // Automatically validates against enum values
+    status: OrderStatus
+  ): Promise<Order[]> {
+    return await orderService.getByStatus(status);
+  }
+}
+```
+
+## Required vs Optional
+
+Optional properties are validated only when present:
+
+```typescript
+export interface UpdateUserRequest {
+  /**
+   * @minLength 3
+   * @maxLength 50
+   */
+  name?: string;  // Validated only if provided
+  
+  /**
+   * @format email
+   */
+  email?: string;  // Validated only if provided
+  
+  /**
+   * @minimum 18
+   * @maximum 120
+   */
+  age?: number;  // Validated only if provided
+}
+
+@Route('users')
+export class UserController {
+  @Put('{userId}')
+  public async updateUser(
+    @Path() userId: number,
+    @Body() request: UpdateUserRequest
+  ): Promise<User> {
+    // All properties are optional, but if provided, they must be valid
+    return await userService.update(userId, request);
+  }
+}
+```
+
+## Default Values
+
+Specify default values for optional parameters:
+
+```typescript
+export interface SearchRequest {
+  query: string;
+  
+  /**
+   * @default 1
+   * @isInt
+   * @minimum 1
+   */
+  page?: number;
+  
+  /**
+   * @default 20
+   * @isInt
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  
+  /**
+   * @default true
+   */
+  includeArchived?: boolean;
+}
+
+@Route('search')
+export class SearchController {
+  @Get()
+  public async search(
+    @Query() query: string,
+    @Query() page: number = 1,
+    @Query() pageSize: number = 20
+  ): Promise<SearchResults> {
+    return await searchService.search({ query, page, pageSize });
+  }
+}
+```
+
+## Date Validation
+
+Dates are automatically validated and parsed:
+
+```typescript
+export interface Event {
+  id: number;
+  title: string;
+  startDate: Date;  // Validated as ISO 8601 date-time
+  endDate: Date;
+}
+
+@Route('events')
+export class EventController {
+  @Get('range')
+  public async getEventsByDateRange(
+    @Query() startDate: Date,
+    @Query() endDate: Date
+  ): Promise<Event[]> {
+    // Dates are parsed from ISO 8601 strings
+    // Example: ?startDate=2024-01-01T00:00:00Z&endDate=2024-12-31T23:59:59Z
+    return await eventService.getByDateRange(startDate, endDate);
+  }
+}
+```
+
+## Nested Object Validation
+
+Validation works recursively through nested objects:
+
+```typescript
+export interface Address {
+  /**
+   * @minLength 5
+   * @maxLength 100
+   */
+  street: string;
+  
+  /**
+   * @minLength 2
+   * @maxLength 50
+   */
+  city: string;
+  
+  /**
+   * @pattern ^[0-9]{5}$
+   */
+  zipCode: string;
+}
+
+export interface CreateUserRequest {
+  /**
+   * @minLength 3
+   * @maxLength 50
+   */
+  name: string;
+  
+  /**
+   * @format email
+   */
+  email: string;
+  
+  address: Address;  // Nested validation
+  
+  billingAddress?: Address;  // Optional nested validation
+}
+
+@Route('users')
+export class UserController {
+  @Post()
+  public async createUser(
+    @Body() request: CreateUserRequest
+  ): Promise<User> {
+    // All nested properties are validated
+    return await userService.create(request);
+  }
+}
+```
+
+## Union Type Validation
+
+Validation for discriminated unions:
+
+```typescript
+export interface SuccessResponse {
+  status: 'success';
+  data: any;
+}
+
+export interface ErrorResponse {
+  status: 'error';
+  /**
+   * @minLength 1
+   */
+  message: string;
+  code: number;
+}
+
+export type ApiResponse = SuccessResponse | ErrorResponse;
+
+// Discriminated union with type field
+export interface CreditCardPayment {
+  type: 'credit_card';
+  /**
+   * @pattern ^[0-9]{16}$
+   */
+  cardNumber: string;
+  /**
+   * @pattern ^[0-9]{3}$
+   */
+  cvv: string;
+}
+
+export interface PayPalPayment {
+  type: 'paypal';
+  /**
+   * @format email
+   */
+  paypalEmail: string;
+}
+
+export type Payment = CreditCardPayment | PayPalPayment;
+
+@Route('payments')
+export class PaymentController {
+  @Post()
+  public async processPayment(
+    @Body() payment: Payment
+  ): Promise<PaymentResult> {
+    // Validation based on discriminator field
+    return await paymentService.process(payment);
+  }
+}
+```
+
+## Custom Validation Messages
+
+Some validators accept custom error messages:
+
+```typescript
+@Route('users')
+export class UserController {
+  /**
+   * @param username User's username
+   * @param email User's email address
+   * @isString username Username must be a string
+   * @minLength username 3 Username too short - minimum 3 characters
+   * @maxLength username 20 Username too long - maximum 20 characters
+   * @isString email Invalid email format
+   */
+  @Post()
+  public async createUser(
+    @Query() username: string,
+    @Query() email: string
+  ): Promise<User> {
+    return await userService.create({ username, email });
+  }
+}
+```
+
+## Validation Examples
+
+<Tabs>
+  <Tab title="User Registration">
+    ```typescript
+    export interface RegisterUserRequest {
+      /**
+       * @minLength 3
+       * @maxLength 30
+       * @pattern ^[a-zA-Z0-9_]+$
+       */
+      username: string;
+      
+      /**
+       * @format email
+       */
+      email: string;
+      
+      /**
+       * @minLength 8
+       * @maxLength 100
+       * @pattern ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)
+       */
+      password: string;
+      
+      /**
+       * @minimum 18
+       * @maximum 120
+       * @isInt
+       */
+      age: number;
+      
+      /**
+       * @default false
+       */
+      acceptTerms: boolean;
+    }
+
+    @Route('auth')
+    export class AuthController {
+      @Post('register')
+      public async register(
+        @Body() request: RegisterUserRequest
+      ): Promise<User> {
+        return await authService.register(request);
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Product Creation">
+    ```typescript
+    export interface CreateProductRequest {
+      /**
+       * @minLength 3
+       * @maxLength 200
+       */
+      name: string;
+      
+      /**
+       * @maxLength 2000
+       */
+      description: string;
+      
+      /**
+       * @minimum 0.01
+       * @maximum 999999.99
+       * @isFloat
+       */
+      price: number;
+      
+      /**
+       * @minimum 0
+       * @isInt
+       */
+      stock: number;
+      
+      /**
+       * @minItems 1
+       * @maxItems 10
+       * @uniqueItems true
+       */
+      categories: string[];
+      
+      /**
+       * @minItems 1
+       * @maxItems 5
+       */
+      images: string[];
+    }
+
+    @Route('products')
+    export class ProductController {
+      @Post()
+      public async create(
+        @Body() request: CreateProductRequest
+      ): Promise<Product> {
+        return await productService.create(request);
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Search Filters">
+    ```typescript
+    export interface ProductFilters {
+      /**
+       * @minLength 2
+       * @maxLength 100
+       */
+      query?: string;
+      
+      /**
+       * @minimum 0
+       * @isFloat
+       */
+      minPrice?: number;
+      
+      /**
+       * @minimum 0
+       * @isFloat
+       */
+      maxPrice?: number;
+      
+      /**
+       * @isInt
+       * @minimum 1
+       * @default 1
+       */
+      page?: number;
+      
+      /**
+       * @isInt
+       * @minimum 1
+       * @maximum 100
+       * @default 20
+       */
+      pageSize?: number;
+      
+      /**
+       * @default true
+       */
+      inStock?: boolean;
+      
+      categories?: string[];
+    }
+
+    @Route('products')
+    export class ProductController {
+      @Get('search')
+      public async search(
+        @Queries() filters: ProductFilters
+      ): Promise<PaginatedResponse<Product>> {
+        return await productService.search(filters);
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Validation Error Responses
+
+When validation fails, tsoa returns a structured error response:
+
+```json
+{
+  "status": 400,
+  "message": "Validation Failed",
+  "details": {
+    "body.username": {
+      "message": "minLength",
+      "value": "ab"
+    },
+    "body.email": {
+      "message": "invalid email format",
+      "value": "notanemail"
+    },
+    "body.age": {
+      "message": "min 18",
+      "value": 15
+    }
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate at Model Level">
+    Define validation rules on models for reusability:
+    
+    ```typescript
+    // Good: Validation defined once
+    export interface User {
+      /**
+       * @minLength 3
+       * @maxLength 30
+       */
+      username: string;
+      
+      /**
+       * @format email
+       */
+      email: string;
+    }
+
+    // Used everywhere without repeating rules
+    @Post()
+    public async create(@Body() user: User): Promise<User> {}
+    
+    @Put('{id}')
+    public async update(@Path() id: number, @Body() user: User): Promise<User> {}
+    ```
+  </Accordion>
+
+  <Accordion title="Use Appropriate Constraints">
+    Choose constraints that match your business rules:
+    
+    ```typescript
+    export interface Product {
+      // Price should be positive and reasonable
+      /**
+       * @minimum 0.01
+       * @maximum 1000000
+       * @isFloat
+       */
+      price: number;
+      
+      // Stock must be non-negative integer
+      /**
+       * @minimum 0
+       * @isInt
+       */
+      stock: number;
+      
+      // SKU has specific format
+      /**
+       * @pattern ^[A-Z]{3}-[0-9]{6}$
+       */
+      sku: string;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Provide Helpful Error Messages">
+    Add custom messages for better user experience:
+    
+    ```typescript
+    /**
+     * @param password User password
+     * @minLength password 8 Password must be at least 8 characters
+     * @maxLength password 100 Password is too long
+     * @pattern password ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d) Password must contain uppercase, lowercase, and number
+     */
+    @Post('register')
+    public async register(
+      @Query() username: string,
+      @Query() password: string
+    ): Promise<User> {
+      return await authService.register(username, password);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Validate Arrays Thoroughly">
+    Set both minimum and maximum for array sizes:
+    
+    ```typescript
+    export interface Order {
+      /**
+       * @minItems 1 Order must have at least one item
+       * @maxItems 50 Cannot order more than 50 items at once
+       */
+      items: OrderItem[];
+      
+      /**
+       * @minItems 0
+       * @maxItems 10
+       * @uniqueItems true
+       */
+      tags?: string[];
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Combine Multiple Constraints">
+    Use multiple validators for comprehensive validation:
+    
+    ```typescript
+    export interface Event {
+      /**
+       * @minLength 5
+       * @maxLength 100
+       * @pattern ^[a-zA-Z0-9\s-]+$
+       */
+      title: string;
+      
+      /**
+       * @minimum 1
+       * @maximum 10000
+       * @isInt
+       */
+      attendeeLimit: number;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Models" icon="cube" href="/concepts/models">
+    Learn more about defining models
+  </Card>
+  <Card title="Responses" icon="reply" href="/concepts/responses">
+    Handle validation errors and responses
+  </Card>
+  <Card title="Decorators" icon="at" href="/concepts/decorators">
+    Learn about parameter decorators
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your validated endpoints
+  </Card>
+</CardGroup>

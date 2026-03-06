@@ -1,0 +1,487 @@
+---
+title: "generateSpec"
+description: "Generate OpenAPI specification from TypeScript controllers"
+---
+
+## Overview
+
+The `generateSpec` function generates an OpenAPI specification (Swagger) from your TypeScript controllers decorated with tsoa decorators. It analyzes your controller files, extracts metadata, and produces a JSON or YAML specification file.
+
+## Signature
+
+```typescript
+async function generateSpec(
+  swaggerConfig: ExtendedSpecConfig,
+  compilerOptions?: ts.CompilerOptions,
+  ignorePaths?: string[],
+  metadata?: Tsoa.Metadata,
+  defaultNumberType?: Config['defaultNumberType']
+): Promise<Tsoa.Metadata>
+```
+
+## Parameters
+
+<ParamField path="swaggerConfig" type="ExtendedSpecConfig" required>
+  Configuration object for spec generation. See [SpecConfig](/api/interfaces/spec-config) for details.
+  
+  Must include:
+  - `entryFile`: The entry point to your API
+  - `outputDirectory`: Where to write the spec file
+  - Additional OpenAPI metadata (name, version, description, etc.)
+</ParamField>
+
+<ParamField path="compilerOptions" type="ts.CompilerOptions" optional>
+  TypeScript compiler options to use during generation.
+  
+  If not provided, tsoa will use the compiler options from your `tsconfig.json`.
+</ParamField>
+
+<ParamField path="ignorePaths" type="string[]" optional>
+  Array of path globs to ignore during TypeScript metadata scan.
+  
+  Example: `['**/node_modules/**', '**/dist/**']`
+</ParamField>
+
+<ParamField path="metadata" type="Tsoa.Metadata" optional>
+  Pre-computed metadata from a previous generation step.
+  
+  Pass this to avoid re-scanning your controllers when generating both routes and spec.
+</ParamField>
+
+<ParamField path="defaultNumberType" type="'double' | 'float' | 'integer' | 'long'" optional>
+  Default OpenAPI number type for TypeScript's `number` type when no type annotation is present.
+  
+  Default: `'double'`
+</ParamField>
+
+## Returns
+
+<ResponseField name="metadata" type="Tsoa.Metadata">
+  The generated metadata object containing all controller and route information.
+  
+  This can be passed to `generateRoutes` to avoid re-scanning your codebase.
+</ResponseField>
+
+## Usage
+
+### Basic Usage
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+await generateSpec(config);
+// Generates: ./dist/swagger.json
+```
+
+### Generate YAML Specification
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './api-docs',
+  yaml: true,
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+await generateSpec(config);
+// Generates: ./api-docs/swagger.yaml
+```
+
+### Custom Spec Filename
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './api-docs',
+  specFileBaseName: 'openapi',
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+await generateSpec(config);
+// Generates: ./api-docs/openapi.json
+```
+
+### With Custom TypeScript Compiler Options
+
+```typescript
+import { generateSpec } from 'tsoa';
+import * as ts from 'typescript';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+const compilerOptions: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2020,
+  module: ts.ModuleKind.CommonJS,
+  experimentalDecorators: true,
+  emitDecoratorMetadata: true,
+  strictNullChecks: true
+};
+
+await generateSpec(config, compilerOptions);
+```
+
+### Ignoring Paths
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+const ignorePaths = [
+  '**/node_modules/**',
+  '**/dist/**',
+  '**/*.test.ts',
+  '**/internal/**'
+];
+
+await generateSpec(config, undefined, ignorePaths);
+```
+
+### Reusing Metadata for Routes Generation
+
+```typescript
+import { generateSpec, generateRoutes } from 'tsoa';
+
+const specConfig = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3,
+  name: 'My API',
+  version: '1.0.0'
+};
+
+const routesConfig = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express'
+};
+
+// Generate spec and capture metadata
+const metadata = await generateSpec(specConfig);
+
+// Reuse metadata for routes generation
+await generateRoutes(routesConfig, undefined, undefined, metadata);
+```
+
+### OpenAPI 3.1 Specification
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3.1, // OpenAPI 3.1
+  name: 'My API',
+  version: '2.0.0',
+  description: 'Modern API using OpenAPI 3.1',
+  license: 'MIT'
+};
+
+await generateSpec(config);
+```
+
+### Full Configuration Example
+
+```typescript
+import { generateSpec } from 'tsoa';
+
+const config = {
+  entryFile: './src/server.ts',
+  outputDirectory: './public/api-docs',
+  specFileBaseName: 'openapi',
+  yaml: true,
+  specVersion: 3,
+  
+  // API Metadata
+  name: 'E-Commerce API',
+  version: '2.1.0',
+  description: 'RESTful API for e-commerce platform',
+  license: 'MIT',
+  
+  // Server Configuration
+  host: 'api.example.com',
+  basePath: '/v2',
+  schemes: ['https'],
+  
+  // Contact Information
+  contact: {
+    name: 'API Support',
+    email: 'api@example.com',
+    url: 'https://example.com/support'
+  },
+  
+  // Security Definitions
+  securityDefinitions: {
+    bearer: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT'
+    },
+    api_key: {
+      type: 'apiKey',
+      name: 'X-API-Key',
+      in: 'header'
+    }
+  },
+  
+  // Tags
+  tags: [
+    {
+      name: 'Products',
+      description: 'Product catalog operations'
+    },
+    {
+      name: 'Orders',
+      description: 'Order management'
+    }
+  ],
+  
+  // Controller Path Globs
+  controllerPathGlobs: [
+    './src/controllers/**/*.ts'
+  ],
+  
+  // Extended Spec
+  spec: {
+    // Additional OpenAPI properties
+    'x-api-id': 'ecommerce-api'
+  }
+};
+
+await generateSpec(config);
+```
+
+## Output
+
+The function generates an OpenAPI specification file at the specified output directory:
+
+### JSON Output (default)
+
+```json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "My API",
+    "version": "1.0.0",
+    "description": "API documentation"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "paths": {
+    "/users": {
+      "get": {
+        "operationId": "GetUsers",
+        "tags": ["Users"],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" }
+        },
+        "required": ["id", "name", "email"]
+      }
+    }
+  }
+}
+```
+
+### YAML Output
+
+```yaml
+openapi: 3.0.0
+info:
+  title: My API
+  version: 1.0.0
+  description: API documentation
+servers:
+  - url: http://localhost:3000
+paths:
+  /users:
+    get:
+      operationId: GetUsers
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+      required:
+        - id
+        - name
+        - email
+```
+
+## Build Script Integration
+
+### package.json
+
+```json
+{
+  "scripts": {
+    "build:spec": "ts-node src/scripts/generate-spec.ts",
+    "build:routes": "ts-node src/scripts/generate-routes.ts",
+    "build:all": "npm run build:spec && npm run build:routes",
+    "prebuild": "npm run build:all"
+  }
+}
+```
+
+### scripts/generate-spec.ts
+
+```typescript
+import { generateSpec } from 'tsoa';
+import { specConfig } from '../tsoa.config';
+
+(async () => {
+  try {
+    console.log('Generating OpenAPI specification...');
+    await generateSpec(specConfig);
+    console.log('✓ Specification generated successfully');
+  } catch (error) {
+    console.error('Failed to generate specification:', error);
+    process.exit(1);
+  }
+})();
+```
+
+## CLI Alternative
+
+Instead of using the function directly, you can use the tsoa CLI:
+
+```bash
+# Generate spec using tsoa.json configuration
+tsoa spec
+
+# Generate spec with custom config file
+tsoa spec -c ./custom-tsoa.json
+```
+
+## Helper Function
+
+### getSwaggerOutputPath
+
+Get the output path for the generated specification file:
+
+```typescript
+import { getSwaggerOutputPath } from 'tsoa';
+
+const config = {
+  outputDirectory: './dist',
+  specFileBaseName: 'openapi',
+  yaml: true
+};
+
+const outputPath = getSwaggerOutputPath(config);
+console.log(outputPath); // './dist/openapi.yaml'
+```
+
+## Common Issues
+
+### Missing Entry File
+
+```typescript
+// Error: Entry file not found
+const config = {
+  entryFile: './src/app.ts', // Make sure this file exists
+  outputDirectory: './dist'
+};
+```
+
+### TypeScript Compilation Errors
+
+Ensure your TypeScript code compiles successfully before running `generateSpec`:
+
+```bash
+tsc --noEmit
+```
+
+### Controller Discovery
+
+If controllers aren't being discovered, specify `controllerPathGlobs`:
+
+```typescript
+const config = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  controllerPathGlobs: [
+    './src/controllers/**/*.ts',
+    './src/modules/**/controllers/*.ts'
+  ]
+};
+```
+
+## See Also
+
+- [generateRoutes](/api/functions/generate-routes)
+- [SpecConfig Interface](/api/interfaces/spec-config)
+- [Config Interface](/api/interfaces/config)

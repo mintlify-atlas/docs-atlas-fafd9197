@@ -1,0 +1,590 @@
+---
+title: File Uploads
+description: Handle multipart file uploads in your tsoa API
+---
+
+tsoa supports file uploads through the `@UploadedFile` and `@UploadedFiles` decorators, integrating seamlessly with popular file upload libraries.
+
+## Installation
+
+Install the required dependencies based on your framework:
+
+<Tabs>
+  <Tab title="Express">
+    ```bash
+    npm install multer
+    npm install --save-dev @types/multer
+    ```
+  </Tab>
+  <Tab title="Koa">
+    ```bash
+    npm install @koa/multer multer
+    npm install --save-dev @types/multer
+    ```
+  </Tab>
+  <Tab title="Hapi">
+    Hapi has built-in multipart support, no additional packages needed.
+  </Tab>
+</Tabs>
+
+## Basic File Upload
+
+### Single File
+
+Accept a single file upload:
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+
+interface FileUploadResponse {
+  filename: string;
+  size: number;
+  mimetype: string;
+}
+
+@Route('upload')
+export class UploadController extends Controller {
+  /**
+   * Upload a single file
+   */
+  @Post('file')
+  public async uploadFile(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<FileUploadResponse> {
+    return {
+      filename: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype
+    };
+  }
+}
+```
+
+### Multiple Files
+
+Accept multiple files in a single upload:
+
+```typescript
+import { Controller, Post, Route, UploadedFiles } from 'tsoa';
+
+@Route('upload')
+export class UploadController extends Controller {
+  /**
+   * Upload multiple files
+   */
+  @Post('files')
+  public async uploadFiles(
+    @UploadedFiles() files: Express.Multer.File[]
+  ): Promise<FileUploadResponse[]> {
+    return files.map(file => ({
+      filename: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype
+    }));
+  }
+}
+```
+
+## Optional File Uploads
+
+Make file uploads optional:
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('optional')
+  public async uploadOptionalFile(
+    @UploadedFile() file?: Express.Multer.File
+  ): Promise<string> {
+    if (!file) {
+      return 'No file uploaded';
+    }
+    
+    return `Uploaded: ${file.originalname}`;
+  }
+}
+```
+
+## Mixed Form Data
+
+Combine file uploads with other form fields:
+
+```typescript
+import { Controller, Post, Route, UploadedFile, FormField } from 'tsoa';
+
+interface ProfileUpdateResponse {
+  username: string;
+  avatarUrl: string;
+}
+
+@Route('profile')
+export class ProfileController extends Controller {
+  /**
+   * Update user profile with avatar
+   */
+  @Post('update')
+  public async updateProfile(
+    @FormField() username: string,
+    @FormField() bio?: string,
+    @UploadedFile() avatar?: Express.Multer.File
+  ): Promise<ProfileUpdateResponse> {
+    let avatarUrl = '/default-avatar.png';
+    
+    if (avatar) {
+      // Save file and get URL
+      avatarUrl = await saveFile(avatar);
+    }
+    
+    await updateUserProfile({ username, bio, avatarUrl });
+    
+    return { username, avatarUrl };
+  }
+}
+```
+
+## Multiple File Fields
+
+Handle different file fields in the same request:
+
+```typescript
+import { Controller, Post, Route, UploadedFile, FormField } from 'tsoa';
+
+interface DocumentUploadResponse {
+  documentId: string;
+  files: {
+    document: string;
+    signature: string;
+  };
+}
+
+@Route('documents')
+export class DocumentController extends Controller {
+  @Post('submit')
+  public async submitDocument(
+    @FormField() title: string,
+    @UploadedFile('document') document: Express.Multer.File,
+    @UploadedFile('signature') signature: Express.Multer.File
+  ): Promise<DocumentUploadResponse> {
+    const documentPath = await saveFile(document, 'documents');
+    const signaturePath = await saveFile(signature, 'signatures');
+    
+    const documentId = await createDocument({
+      title,
+      documentPath,
+      signaturePath
+    });
+    
+    return {
+      documentId,
+      files: {
+        document: documentPath,
+        signature: signaturePath
+      }
+    };
+  }
+}
+```
+
+## Custom Multer Configuration
+
+### Express
+
+Customize multer behavior in your Express app:
+
+```typescript src/app.ts
+import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+
+// Configure storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Configure multer
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images only
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
+    }
+    cb(null, true);
+  }
+});
+
+// Pass custom multer instance to RegisterRoutes
+RegisterRoutes(app, { multer: upload });
+
+app.listen(3000);
+```
+
+### Koa
+
+Customize multer for Koa:
+
+```typescript src/app.ts
+import Koa from 'koa';
+import Router from '@koa/router';
+import multer from '@koa/multer';
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+const router = new Router();
+
+// Configure multer
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: 'uploads/',
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    }
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  }
+});
+
+// Pass custom multer instance
+RegisterRoutes(router, { multer: upload });
+
+app.use(router.routes());
+app.listen(3000);
+```
+
+## File Validation
+
+Validate uploaded files in your controller:
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+import { BadRequestError } from '../errors';
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('image')
+  public async uploadImage(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<any> {
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      this.setStatus(400);
+      throw new BadRequestError('Invalid file type. Only JPEG, PNG, and GIF are allowed.');
+    }
+    
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      this.setStatus(400);
+      throw new BadRequestError('File too large. Maximum size is 5MB.');
+    }
+    
+    // Process file
+    const url = await saveAndProcessImage(file);
+    
+    return { url };
+  }
+}
+```
+
+## Memory Storage
+
+Store files in memory instead of disk:
+
+```typescript src/app.ts
+import multer from 'multer';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB
+  }
+});
+
+RegisterRoutes(app, { multer: upload });
+```
+
+Access buffer in controller:
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('process')
+  public async processFile(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<any> {
+    // File is in memory as buffer
+    const buffer = file.buffer;
+    
+    // Process buffer (e.g., upload to S3, process image, etc.)
+    const result = await processBuffer(buffer);
+    
+    return result;
+  }
+}
+```
+
+## Cloud Storage Integration
+
+### AWS S3
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { v4 as uuidv4 } from 'uuid';
+
+const s3Client = new S3Client({ region: 'us-east-1' });
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('s3')
+  public async uploadToS3(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<{ url: string }> {
+    const key = `uploads/${uuidv4()}-${file.originalname}`;
+    
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      })
+    );
+    
+    const url = `https://${process.env.S3_BUCKET}.s3.amazonaws.com/${key}`;
+    return { url };
+  }
+}
+```
+
+### Google Cloud Storage
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+import { Storage } from '@google-cloud/storage';
+
+const storage = new Storage();
+const bucket = storage.bucket(process.env.GCS_BUCKET!);
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('gcs')
+  public async uploadToGCS(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<{ url: string }> {
+    const blob = bucket.file(`uploads/${Date.now()}-${file.originalname}`);
+    
+    await blob.save(file.buffer, {
+      contentType: file.mimetype,
+    });
+    
+    const [url] = await blob.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 1000 * 60 * 60, // 1 hour
+    });
+    
+    return { url };
+  }
+}
+```
+
+## File Type Detection
+
+Use file-type library for accurate MIME type detection:
+
+```bash
+npm install file-type
+```
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+import { fileTypeFromBuffer } from 'file-type';
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('secure')
+  public async secureUpload(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<any> {
+    // Detect actual file type from buffer
+    const fileType = await fileTypeFromBuffer(file.buffer);
+    
+    if (!fileType) {
+      this.setStatus(400);
+      throw new Error('Unable to determine file type');
+    }
+    
+    // Verify claimed MIME type matches actual type
+    if (fileType.mime !== file.mimetype) {
+      this.setStatus(400);
+      throw new Error('File type mismatch');
+    }
+    
+    // Proceed with upload
+    return { 
+      mime: fileType.mime,
+      ext: fileType.ext 
+    };
+  }
+}
+```
+
+## Image Processing
+
+Process uploaded images with Sharp:
+
+```bash
+npm install sharp
+```
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+import sharp from 'sharp';
+
+@Route('images')
+export class ImageController extends Controller {
+  @Post('upload')
+  public async uploadImage(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<any> {
+    // Create thumbnail
+    const thumbnail = await sharp(file.buffer)
+      .resize(200, 200, { fit: 'cover' })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    
+    // Create medium size
+    const medium = await sharp(file.buffer)
+      .resize(800, 800, { fit: 'inside' })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    
+    // Save both versions
+    const thumbnailUrl = await saveBuffer(thumbnail, 'thumbnails');
+    const mediumUrl = await saveBuffer(medium, 'images');
+    
+    return {
+      original: file.originalname,
+      thumbnail: thumbnailUrl,
+      medium: mediumUrl
+    };
+  }
+}
+```
+
+## Error Handling
+
+Handle file upload errors gracefully:
+
+```typescript
+import { Controller, Post, Route, UploadedFile } from 'tsoa';
+
+@Route('upload')
+export class UploadController extends Controller {
+  @Post('safe')
+  public async safeUpload(
+    @UploadedFile() file?: Express.Multer.File
+  ): Promise<any> {
+    try {
+      if (!file) {
+        this.setStatus(400);
+        return { error: 'No file provided' };
+      }
+      
+      // Validate and process file
+      const result = await processFile(file);
+      return result;
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      this.setStatus(500);
+      return { 
+        error: 'File upload failed',
+        details: error.message 
+      };
+    }
+  }
+}
+```
+
+## Configuration Reference
+
+### tsoa.json
+
+Configure file upload settings:
+
+```json tsoa.json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "multerOpts": {
+      "limits": {
+        "fileSize": 5242880
+      }
+    }
+  }
+}
+```
+
+### Multer Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `dest` | string | Destination folder for uploaded files |
+| `storage` | StorageEngine | Storage engine (disk or memory) |
+| `limits.fileSize` | number | Max file size in bytes |
+| `limits.files` | number | Max number of files |
+| `fileFilter` | function | Function to control which files are accepted |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate File Types">
+    Always validate file types both client-side and server-side. Don't rely solely on MIME types - use magic number detection.
+  </Accordion>
+  
+  <Accordion title="Set Size Limits">
+    Always set reasonable file size limits to prevent abuse and protect your server resources.
+  </Accordion>
+  
+  <Accordion title="Use Unique Filenames">
+    Generate unique filenames (UUIDs, timestamps) to prevent conflicts and potential security issues.
+  </Accordion>
+  
+  <Accordion title="Scan for Malware">
+    For user-uploaded files, integrate virus scanning before saving or processing files.
+  </Accordion>
+  
+  <Accordion title="Store Outside Web Root">
+    Store uploaded files outside your web root and serve them through controlled endpoints.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Learn about request validation
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your file upload endpoints
+  </Card>
+</CardGroup>

@@ -1,0 +1,632 @@
+---
+title: Dependency Injection
+description: Use IoC containers with tsoa controllers
+---
+
+tsoa supports dependency injection through IoC (Inversion of Control) containers, allowing you to manage controller dependencies and improve testability.
+
+## Why Dependency Injection?
+
+Dependency injection provides several benefits:
+
+- **Testability**: Easily mock dependencies in unit tests
+- **Loose Coupling**: Controllers don't directly instantiate their dependencies
+- **Lifecycle Management**: Control how and when dependencies are created
+- **Configuration**: Centralize dependency configuration
+
+## Supported Containers
+
+tsoa supports several popular IoC containers:
+
+- **InversifyJS** - Powerful IoC container with decorator support
+- **TypeDI** - Lightweight dependency injection for TypeScript
+- **tsyringe** - Microsoft's lightweight DI container
+- **Custom** - Implement your own container interface
+
+## InversifyJS Setup
+
+<Steps>
+
+<Step title="Install Dependencies">
+
+```bash
+npm install inversify reflect-metadata
+npm install --save-dev @types/node
+```
+
+</Step>
+
+<Step title="Configure TypeScript">
+
+Update your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["reflect-metadata"]
+  }
+}
+```
+
+</Step>
+
+<Step title="Create IoC Container">
+
+Create a container configuration file:
+
+```typescript src/ioc.ts
+import { Container, decorate, injectable } from 'inversify';
+import { Controller } from 'tsoa';
+
+// Make tsoa's Controller injectable
+decorate(injectable(), Controller);
+
+// Create container
+const iocContainer = new Container();
+
+// Register services
+import { UserService } from './services/userService';
+import { DatabaseService } from './services/databaseService';
+import { UserController } from './controllers/userController';
+
+iocContainer.bind<DatabaseService>(DatabaseService).toSelf().inSingletonScope();
+iocContainer.bind<UserService>(UserService).toSelf().inSingletonScope();
+iocContainer.bind<UserController>(UserController).toSelf();
+
+export { iocContainer };
+```
+
+</Step>
+
+<Step title="Create Services">
+
+Create injectable services:
+
+```typescript src/services/databaseService.ts
+import { injectable } from 'inversify';
+
+@injectable()
+export class DatabaseService {
+  async query(sql: string, params: any[]): Promise<any[]> {
+    // Your database logic
+    return [];
+  }
+}
+```
+
+```typescript src/services/userService.ts
+import { injectable, inject } from 'inversify';
+import { DatabaseService } from './databaseService';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+@injectable()
+export class UserService {
+  constructor(
+    private db: DatabaseService
+  ) {}
+  
+  async getUser(id: number): Promise<User | null> {
+    const results = await this.db.query(
+      'SELECT * FROM users WHERE id = ?',
+      [id]
+    );
+    return results[0] || null;
+  }
+  
+  async createUser(data: Omit<User, 'id'>): Promise<User> {
+    const result = await this.db.query(
+      'INSERT INTO users (name, email) VALUES (?, ?)',
+      [data.name, data.email]
+    );
+    return { id: result.insertId, ...data };
+  }
+}
+```
+
+</Step>
+
+<Step title="Update Controller">
+
+Inject services into your controller:
+
+```typescript src/controllers/userController.ts
+import { Controller, Get, Post, Route, Body, Path } from 'tsoa';
+import { injectable, inject } from 'inversify';
+import { UserService } from '../services/userService';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@injectable()
+@Route('users')
+export class UserController extends Controller {
+  constructor(
+    private userService: UserService
+  ) {
+    super();
+  }
+  
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    const user = await this.userService.getUser(userId);
+    
+    if (!user) {
+      this.setStatus(404);
+      throw new Error('User not found');
+    }
+    
+    return user;
+  }
+  
+  @Post()
+  public async createUser(@Body() requestBody: CreateUserRequest): Promise<User> {
+    this.setStatus(201);
+    return this.userService.createUser(requestBody);
+  }
+}
+```
+
+</Step>
+
+<Step title="Configure tsoa">
+
+Update `tsoa.json` to use your IoC module:
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "spec": {
+    "outputDirectory": "build"
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "iocModule": "./ioc"
+  }
+}
+```
+
+</Step>
+
+<Step title="Initialize in App">
+
+Import reflect-metadata at the very top of your entry file:
+
+```typescript src/app.ts
+import 'reflect-metadata';
+import express from 'express';
+import bodyParser from 'body-parser';
+import { RegisterRoutes } from './routes';
+import './ioc'; // Import to initialize container
+
+const app = express();
+app.use(bodyParser.json());
+
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+</Step>
+
+</Steps>
+
+## TypeDI Setup
+
+<Steps>
+
+<Step title="Install TypeDI">
+
+```bash
+npm install typedi reflect-metadata
+```
+
+</Step>
+
+<Step title="Configure Services">
+
+```typescript src/services/userService.ts
+import { Service } from 'typedi';
+import { DatabaseService } from './databaseService';
+
+@Service()
+export class UserService {
+  constructor(
+    private db: DatabaseService
+  ) {}
+  
+  async getUser(id: number): Promise<User | null> {
+    return this.db.findUserById(id);
+  }
+}
+```
+
+</Step>
+
+<Step title="Create IoC Module">
+
+```typescript src/ioc.ts
+import { Container } from 'typedi';
+
+export const iocContainer = {
+  get: <T>(someClass: { new (...args: any[]): T }): T => {
+    return Container.get(someClass);
+  }
+};
+```
+
+</Step>
+
+<Step title="Update Controller">
+
+```typescript src/controllers/userController.ts
+import { Controller, Get, Route } from 'tsoa';
+import { Service } from 'typedi';
+import { UserService } from '../services/userService';
+
+@Service()
+@Route('users')
+export class UserController extends Controller {
+  constructor(
+    private userService: UserService
+  ) {
+    super();
+  }
+  
+  @Get('{id}')
+  public async getUser(id: number): Promise<User> {
+    return this.userService.getUser(id);
+  }
+}
+```
+
+</Step>
+
+</Steps>
+
+## tsyringe Setup
+
+<Steps>
+
+<Step title="Install tsyringe">
+
+```bash
+npm install tsyringe reflect-metadata
+```
+
+</Step>
+
+<Step title="Configure Container">
+
+```typescript src/ioc.ts
+import { container } from 'tsyringe';
+import { IocContainer } from '@tsoa/runtime';
+import { UserService } from './services/userService';
+import { DatabaseService } from './services/databaseService';
+
+// Register services
+container.register('DatabaseService', { useClass: DatabaseService });
+container.register('UserService', { useClass: UserService });
+
+export const iocContainer: IocContainer = {
+  get: <T>(controller: { prototype: T }): T => {
+    return container.resolve<T>(controller as never);
+  }
+};
+```
+
+</Step>
+
+<Step title="Create Services">
+
+```typescript src/services/userService.ts
+import { injectable, inject } from 'tsyringe';
+import { DatabaseService } from './databaseService';
+
+@injectable()
+export class UserService {
+  constructor(
+    @inject('DatabaseService') private db: DatabaseService
+  ) {}
+  
+  async getUser(id: number): Promise<User | null> {
+    return this.db.findUserById(id);
+  }
+}
+```
+
+</Step>
+
+</Steps>
+
+## Dynamic Container
+
+Create a container per request for request-scoped dependencies:
+
+```typescript src/ioc.ts
+import { Container } from 'inversify';
+import { IocContainer, IocContainerFactory } from '@tsoa/runtime';
+import { Request } from 'express';
+
+export const iocContainer: IocContainerFactory = (request: Request) => {
+  // Create a child container for this request
+  const requestContainer = new Container();
+  
+  // Bind request-scoped services
+  requestContainer.bind('CurrentUser').toConstantValue(request.user);
+  requestContainer.bind('RequestId').toConstantValue(request.headers['x-request-id']);
+  
+  // Bind services
+  requestContainer.bind<UserService>(UserService).toSelf();
+  requestContainer.bind<UserController>(UserController).toSelf();
+  
+  return {
+    get: <T>(controller: { prototype: T }): T => {
+      return requestContainer.get<T>(controller as any);
+    }
+  };
+};
+```
+
+Update tsoa.json:
+
+```json tsoa.json
+{
+  "routes": {
+    "iocModule": "./ioc"
+  }
+}
+```
+
+## Lifecycle Scopes
+
+### Singleton
+
+One instance for the entire application:
+
+```typescript
+import { Container } from 'inversify';
+
+const container = new Container();
+container.bind<DatabaseService>(DatabaseService)
+  .toSelf()
+  .inSingletonScope();
+```
+
+### Transient
+
+New instance every time:
+
+```typescript
+container.bind<UserService>(UserService)
+  .toSelf()
+  .inTransientScope();
+```
+
+### Request
+
+One instance per HTTP request:
+
+```typescript
+container.bind<RequestContext>(RequestContext)
+  .toSelf()
+  .inRequestScope();
+```
+
+## Testing with DI
+
+Dependency injection makes testing much easier:
+
+```typescript src/controllers/userController.spec.ts
+import { UserController } from './userController';
+import { UserService } from '../services/userService';
+
+describe('UserController', () => {
+  it('should get user', async () => {
+    // Create mock service
+    const mockUserService = {
+      getUser: jest.fn().mockResolvedValue({
+        id: 1,
+        name: 'John',
+        email: 'john@example.com'
+      })
+    } as any;
+    
+    // Inject mock into controller
+    const controller = new UserController(mockUserService);
+    
+    // Test
+    const result = await controller.getUser(1);
+    
+    expect(result.id).toBe(1);
+    expect(mockUserService.getUser).toHaveBeenCalledWith(1);
+  });
+});
+```
+
+## Advanced Patterns
+
+### Factory Pattern
+
+```typescript
+import { injectable, inject } from 'inversify';
+
+interface ServiceFactory {
+  create(type: string): Service;
+}
+
+@injectable()
+export class UserService {
+  constructor(
+    @inject('ServiceFactory') private factory: ServiceFactory
+  ) {}
+  
+  async processUser(id: number): Promise<void> {
+    const processor = this.factory.create('user-processor');
+    await processor.process(id);
+  }
+}
+```
+
+### Circular Dependencies
+
+Avoid circular dependencies, but if needed:
+
+```typescript
+import { injectable, inject } from 'inversify';
+import { LazyServiceIdentifer } from 'inversify';
+
+@injectable()
+export class ServiceA {
+  constructor(
+    @inject(new LazyServiceIdentifer(() => ServiceB))
+    private serviceB: ServiceB
+  ) {}
+}
+```
+
+### Conditional Binding
+
+```typescript
+import { Container } from 'inversify';
+
+const container = new Container();
+
+if (process.env.NODE_ENV === 'production') {
+  container.bind<Logger>('Logger').to(ProductionLogger);
+} else {
+  container.bind<Logger>('Logger').to(DevelopmentLogger);
+}
+```
+
+## Multi-tenancy
+
+Support multiple tenants with scoped containers:
+
+```typescript src/ioc.ts
+import { Container } from 'inversify';
+import { Request } from 'express';
+
+export const iocContainer = (request: Request) => {
+  const container = new Container();
+  
+  // Extract tenant from request
+  const tenantId = request.headers['x-tenant-id'] as string;
+  
+  // Bind tenant-specific services
+  const database = getDatabaseForTenant(tenantId);
+  container.bind('Database').toConstantValue(database);
+  
+  // Bind controllers
+  container.bind<UserController>(UserController).toSelf();
+  
+  return {
+    get: <T>(controller: any): T => container.get<T>(controller)
+  };
+};
+```
+
+## Configuration
+
+Inject configuration:
+
+```typescript src/config.ts
+import { injectable } from 'inversify';
+
+@injectable()
+export class AppConfig {
+  readonly databaseUrl: string;
+  readonly port: number;
+  readonly jwtSecret: string;
+  
+  constructor() {
+    this.databaseUrl = process.env.DATABASE_URL!;
+    this.port = parseInt(process.env.PORT || '3000');
+    this.jwtSecret = process.env.JWT_SECRET!;
+  }
+}
+```
+
+```typescript
+import { injectable, inject } from 'inversify';
+import { AppConfig } from './config';
+
+@injectable()
+export class DatabaseService {
+  constructor(
+    private config: AppConfig
+  ) {
+    // Use config.databaseUrl
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Interfaces">
+    Bind to interfaces rather than concrete implementations for better flexibility:
+    ```typescript
+    container.bind<IUserService>('IUserService').to(UserService);
+    ```
+  </Accordion>
+  
+  <Accordion title="Avoid Service Locator">
+    Don't use the container directly in your business logic. Inject dependencies through constructors.
+  </Accordion>
+  
+  <Accordion title="Choose Appropriate Scopes">
+    Use singletons for stateless services, transient for lightweight objects, and request scope for request-specific data.
+  </Accordion>
+  
+  <Accordion title="Keep Constructors Simple">
+    Don't do complex work in constructors. Use initialization methods if needed.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### "Cannot resolve" Errors
+
+Ensure all dependencies are registered:
+
+```typescript
+// Register all dependencies
+container.bind<DatabaseService>(DatabaseService).toSelf();
+container.bind<UserService>(UserService).toSelf();
+container.bind<UserController>(UserController).toSelf();
+```
+
+### Circular Dependencies
+
+Refactor to remove circular dependencies or use lazy injection.
+
+### Missing Decorators
+
+Ensure `experimentalDecorators` and `emitDecoratorMetadata` are enabled in `tsconfig.json`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/advanced/testing">
+    Learn how to test your controllers
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Implement authentication with DI
+  </Card>
+</CardGroup>

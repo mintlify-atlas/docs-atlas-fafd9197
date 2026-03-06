@@ -1,0 +1,807 @@
+---
+title: 'Responses'
+description: 'Handle different response types, status codes, and error scenarios'
+icon: 'reply'
+---
+
+## Overview
+
+tsoa provides decorators and utilities for handling various response scenarios, including success responses, error responses, custom status codes, and headers. All responses are automatically documented in your OpenAPI specification.
+
+<Note>
+  Response types and status codes defined with decorators are included in the generated API documentation.
+</Note>
+
+## Basic Responses
+
+The simplest response is returning a Promise from your controller method:
+
+```typescript
+import { Route, Get, Post, Body } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  // Returns 200 OK with User object
+  @Get('{userId}')
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+
+  // Returns 200 OK with array
+  @Get()
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  // Returns 200 OK with void (empty response)
+  @Delete('{userId}')
+  public async deleteUser(userId: number): Promise<void> {
+    await userService.delete(userId);
+  }
+}
+```
+
+## Success Response
+
+Document successful responses with `@SuccessResponse`:
+
+```typescript
+import { Route, Post, Body, SuccessResponse, Controller } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController extends Controller {
+  @Post()
+  @SuccessResponse('201', 'Created') // Status code and description
+  public async createUser(@Body() user: User): Promise<User> {
+    const created = await userService.create(user);
+    
+    // Set the status code
+    this.setStatus(201);
+    
+    // Set location header
+    this.setHeader('Location', `/users/${created.id}`);
+    
+    return created;
+  }
+}
+```
+
+### Custom Success Status Codes
+
+```typescript
+import { Controller, Route, Post, Put, Delete, SuccessResponse } from '@tsoa/runtime';
+
+@Route('posts')
+export class PostController extends Controller {
+  @Post()
+  @SuccessResponse('201', 'Post created')
+  public async create(@Body() post: Post): Promise<Post> {
+    const created = await postService.create(post);
+    this.setStatus(201);
+    return created;
+  }
+
+  @Put('{postId}')
+  @SuccessResponse('200', 'Post updated')
+  public async update(
+    postId: number,
+    @Body() post: Post
+  ): Promise<Post> {
+    return await postService.update(postId, post);
+  }
+
+  @Delete('{postId}')
+  @SuccessResponse('204', 'Post deleted')
+  public async delete(postId: number): Promise<void> {
+    await postService.delete(postId);
+    this.setStatus(204);
+  }
+}
+```
+
+## Error Responses
+
+Document error responses with `@Response`:
+
+```typescript
+import { Route, Get, Response } from '@tsoa/runtime';
+
+export interface ErrorResponse {
+  message: string;
+  code: string;
+}
+
+export interface ValidationError {
+  message: string;
+  fields: Record<string, string>;
+}
+
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  @Response<ErrorResponse>('404', 'User not found')
+  @Response<ErrorResponse>('500', 'Internal server error')
+  public async getUser(userId: number): Promise<User> {
+    const user = await userService.getById(userId);
+    
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    return user;
+  }
+
+  @Post()
+  @Response<ValidationError>('400', 'Validation error')
+  @Response<ErrorResponse>('500', 'Internal server error')
+  public async createUser(@Body() user: User): Promise<User> {
+    return await userService.create(user);
+  }
+}
+```
+
+### Multiple Error Responses
+
+```typescript
+import { Route, Get, Post, Response } from '@tsoa/runtime';
+
+export interface NotFoundError {
+  message: string;
+  resourceType: string;
+  resourceId: number;
+}
+
+export interface UnauthorizedError {
+  message: string;
+  reason: string;
+}
+
+export interface ForbiddenError {
+  message: string;
+  requiredPermissions: string[];
+}
+
+@Route('posts')
+export class PostController {
+  @Get('{postId}')
+  @Response<NotFoundError>('404', 'Post not found')
+  @Response<UnauthorizedError>('401', 'Authentication required')
+  @Response<ForbiddenError>('403', 'Insufficient permissions')
+  @Response<ErrorResponse>('500', 'Internal server error')
+  public async getPost(postId: number): Promise<Post> {
+    return await postService.getById(postId);
+  }
+}
+```
+
+## TsoaResponse Type
+
+Use `TsoaResponse` type for type-safe manual response handling:
+
+```typescript
+import { Route, Get, Res, TsoaResponse } from '@tsoa/runtime';
+
+export interface ErrorModel {
+  message: string;
+  code: string;
+}
+
+@Route('users')
+export class UserController {
+  /**
+   * @param notFoundResponse Response for when user is not found
+   */
+  @Get('{userId}')
+  public async getUser(
+    userId: number,
+    @Res() notFoundResponse: TsoaResponse<404, ErrorModel>
+  ): Promise<User> {
+    const user = await userService.getById(userId);
+    
+    if (!user) {
+      // Type-safe error response
+      return notFoundResponse(404, {
+        message: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
+    return user;
+  }
+}
+```
+
+### TsoaResponse with Headers
+
+```typescript
+import { Route, Get, Post, Res, TsoaResponse } from '@tsoa/runtime';
+
+// Define response type with status, body, and headers
+export type BadRequest = TsoaResponse<
+  400,
+  { message: string },
+  { 'x-error-code': string }
+>;
+
+export type RateLimitError = TsoaResponse<
+  429,
+  { message: string; retryAfter: number },
+  { 'retry-after': string; 'x-rate-limit-remaining': string }
+>;
+
+@Route('api')
+export class ApiController {
+  /**
+   * @param badRequest Bad request response
+   * @param rateLimitError Rate limit response
+   */
+  @Get('data')
+  public async getData(
+    @Res() badRequest: BadRequest,
+    @Res() rateLimitError: RateLimitError
+  ): Promise<Data> {
+    // Check rate limit
+    const rateLimit = await rateLimitService.check();
+    
+    if (rateLimit.exceeded) {
+      return rateLimitError(429, {
+        message: 'Rate limit exceeded',
+        retryAfter: rateLimit.retryAfter
+      }, {
+        'retry-after': rateLimit.retryAfter.toString(),
+        'x-rate-limit-remaining': '0'
+      });
+    }
+    
+    return await dataService.getData();
+  }
+}
+```
+
+### Multiple TsoaResponse Parameters
+
+```typescript
+import { Route, Get, Res, TsoaResponse } from '@tsoa/runtime';
+
+export type NotFound = TsoaResponse<404, { message: string }>;
+export type Unauthorized = TsoaResponse<401, { message: string }>;
+export type Forbidden = TsoaResponse<403, { message: string; required: string[] }>;
+
+@Route('posts')
+export class PostController {
+  /**
+   * @param notFound Not found response
+   * @param unauthorized Unauthorized response
+   * @param forbidden Forbidden response
+   */
+  @Get('{postId}')
+  public async getPost(
+    postId: number,
+    @Res() notFound: NotFound,
+    @Res() unauthorized: Unauthorized,
+    @Res() forbidden: Forbidden
+  ): Promise<Post> {
+    const user = await authService.getCurrentUser();
+    
+    if (!user) {
+      return unauthorized(401, { message: 'Authentication required' });
+    }
+    
+    const post = await postService.getById(postId);
+    
+    if (!post) {
+      return notFound(404, { message: 'Post not found' });
+    }
+    
+    const canView = await authService.canView(user, post);
+    
+    if (!canView) {
+      return forbidden(403, {
+        message: 'Insufficient permissions',
+        required: ['read:posts']
+      });
+    }
+    
+    return post;
+  }
+}
+```
+
+### Union Status Codes
+
+```typescript
+import { Route, Get, Query, Res, TsoaResponse } from '@tsoa/runtime';
+
+export type ClientError = TsoaResponse<
+  400 | 404 | 422,
+  { message: string; code: string }
+>;
+
+export type ServerError = TsoaResponse<
+  500 | 503,
+  { message: string }
+>;
+
+@Route('data')
+export class DataController {
+  /**
+   * @param clientError Client error response
+   * @param serverError Server error response
+   */
+  @Get()
+  public async getData(
+    @Query() id: number,
+    @Res() clientError: ClientError,
+    @Res() serverError: ServerError
+  ): Promise<Data> {
+    if (!id) {
+      return clientError(400, {
+        message: 'ID is required',
+        code: 'MISSING_ID'
+      });
+    }
+    
+    const data = await dataService.getById(id);
+    
+    if (!data) {
+      return clientError(404, {
+        message: 'Data not found',
+        code: 'NOT_FOUND'
+      });
+    }
+    
+    return data;
+  }
+}
+```
+
+## Custom Headers
+
+Set custom response headers:
+
+```typescript
+import { Controller, Route, Get, Post } from '@tsoa/runtime';
+
+@Route('files')
+export class FileController extends Controller {
+  @Get('{fileId}')
+  public async downloadFile(fileId: string): Promise<Buffer> {
+    const file = await fileService.getById(fileId);
+    
+    // Set custom headers
+    this.setHeader('Content-Type', file.mimeType);
+    this.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+    this.setHeader('Content-Length', file.size.toString());
+    this.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    return file.data;
+  }
+
+  @Post('upload')
+  public async uploadFile(@Body() file: FileUpload): Promise<FileMetadata> {
+    const uploaded = await fileService.upload(file);
+    
+    // Set location header
+    this.setHeader('Location', `/files/${uploaded.id}`);
+    
+    // Set custom header
+    this.setHeader('X-File-Id', uploaded.id);
+    
+    this.setStatus(201);
+    
+    return uploaded;
+  }
+}
+```
+
+## Content Types
+
+### Produces Decorator
+
+Specify response content types:
+
+```typescript
+import { Route, Get, Post, Produces } from '@tsoa/runtime';
+
+@Route('data')
+export class DataController {
+  // JSON response (default)
+  @Get('json')
+  @Produces('application/json')
+  public async getJson(): Promise<Data> {
+    return await dataService.getData();
+  }
+
+  // XML response
+  @Get('xml')
+  @Produces('application/xml')
+  public async getXml(): Promise<string> {
+    const data = await dataService.getData();
+    return xmlSerializer.serialize(data);
+  }
+
+  // Plain text response
+  @Get('text')
+  @Produces('text/plain')
+  public async getText(): Promise<string> {
+    return 'Hello, World!';
+  }
+
+  // Binary response
+  @Get('download')
+  @Produces('application/octet-stream')
+  public async download(): Promise<Buffer> {
+    return await fileService.getFile();
+  }
+}
+```
+
+### Multiple Content Types
+
+```typescript
+import { Route, Get, Produces, Header } from '@tsoa/runtime';
+
+@Route('data')
+export class DataController {
+  @Get()
+  @Produces('application/json', 'application/xml')
+  public async getData(
+    @Header('accept') accept?: string
+  ): Promise<string | Data> {
+    const data = await dataService.getData();
+    
+    if (accept === 'application/xml') {
+      return xmlSerializer.serialize(data);
+    }
+    
+    return data;
+  }
+}
+```
+
+### Controller-Level Produces
+
+```typescript
+import { Route, Get, Produces } from '@tsoa/runtime';
+
+@Route('api')
+@Produces('application/json')  // Applies to all methods
+export class ApiController {
+  @Get('data')
+  public async getData(): Promise<Data> {
+    return await dataService.getData();
+  }
+
+  @Get('users')
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Get('special')
+  @Produces('application/xml')  // Override for specific method
+  public async getSpecial(): Promise<string> {
+    const data = await dataService.getSpecial();
+    return xmlSerializer.serialize(data);
+  }
+}
+```
+
+## Streaming Responses
+
+Return streaming responses:
+
+```typescript
+import { Route, Get } from '@tsoa/runtime';
+import { Readable } from 'stream';
+
+@Route('streams')
+export class StreamController {
+  @Get('data')
+  public async streamData(): Promise<Readable> {
+    const readable = new Readable();
+    
+    // Simulate streaming data
+    let count = 0;
+    const interval = setInterval(() => {
+      if (count < 10) {
+        readable.push(`Data chunk ${count}\n`);
+        count++;
+      } else {
+        readable.push(null); // End stream
+        clearInterval(interval);
+      }
+    }, 1000);
+    
+    return readable;
+  }
+
+  @Get('file')
+  public async streamFile(): Promise<Readable> {
+    return fileService.createReadStream('large-file.dat');
+  }
+}
+```
+
+## Response Examples
+
+Provide response examples with the `@Response` decorator:
+
+```typescript
+import { Route, Get, Response } from '@tsoa/runtime';
+
+export interface Product {
+  id: number;
+  name: string;
+  price: number;
+}
+
+export interface ErrorResponse {
+  message: string;
+  code: string;
+}
+
+@Route('products')
+export class ProductController {
+  @Get('{productId}')
+  @Response<ErrorResponse>('404', 'Product not found', {
+    message: 'Product with ID 123 not found',
+    code: 'PRODUCT_NOT_FOUND'
+  })
+  @Response<ErrorResponse>('500', 'Server error', {
+    message: 'An unexpected error occurred',
+    code: 'INTERNAL_ERROR'
+  })
+  public async getProduct(productId: number): Promise<Product> {
+    return await productService.getById(productId);
+  }
+}
+```
+
+## Common Response Patterns
+
+<Tabs>
+  <Tab title="RESTful CRUD">
+    ```typescript
+    import { Controller, Route, Get, Post, Put, Delete, Body, SuccessResponse, Response } from '@tsoa/runtime';
+
+    @Route('items')
+    export class ItemController extends Controller {
+      // List: 200 OK
+      @Get()
+      public async list(): Promise<Item[]> {
+        return await itemService.getAll();
+      }
+
+      // Read: 200 OK or 404 Not Found
+      @Get('{id}')
+      @Response<ErrorResponse>('404', 'Item not found')
+      public async get(id: number): Promise<Item> {
+        const item = await itemService.getById(id);
+        if (!item) throw new Error('Not found');
+        return item;
+      }
+
+      // Create: 201 Created
+      @Post()
+      @SuccessResponse('201', 'Created')
+      public async create(@Body() item: CreateItemRequest): Promise<Item> {
+        const created = await itemService.create(item);
+        this.setStatus(201);
+        this.setHeader('Location', `/items/${created.id}`);
+        return created;
+      }
+
+      // Update: 200 OK
+      @Put('{id}')
+      @Response<ErrorResponse>('404', 'Item not found')
+      public async update(
+        id: number,
+        @Body() item: UpdateItemRequest
+      ): Promise<Item> {
+        return await itemService.update(id, item);
+      }
+
+      // Delete: 204 No Content
+      @Delete('{id}')
+      @SuccessResponse('204', 'Deleted')
+      @Response<ErrorResponse>('404', 'Item not found')
+      public async delete(id: number): Promise<void> {
+        await itemService.delete(id);
+        this.setStatus(204);
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Paginated Response">
+    ```typescript
+    export interface PaginatedResponse<T> {
+      items: T[];
+      total: number;
+      page: number;
+      pageSize: number;
+      totalPages: number;
+    }
+
+    @Route('users')
+    export class UserController extends Controller {
+      @Get()
+      public async getUsers(
+        @Query() page: number = 1,
+        @Query() pageSize: number = 20
+      ): Promise<PaginatedResponse<User>> {
+        const result = await userService.getPaginated(page, pageSize);
+        
+        // Set pagination headers
+        this.setHeader('X-Total-Count', result.total.toString());
+        this.setHeader('X-Page', result.page.toString());
+        this.setHeader('X-Page-Size', result.pageSize.toString());
+        
+        return result;
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Async Job">
+    ```typescript
+    export interface JobResponse {
+      jobId: string;
+      status: 'pending' | 'processing' | 'completed' | 'failed';
+      result?: any;
+    }
+
+    @Route('jobs')
+    export class JobController extends Controller {
+      // Create job: 202 Accepted
+      @Post()
+      @SuccessResponse('202', 'Job accepted')
+      public async createJob(
+        @Body() request: JobRequest
+      ): Promise<JobResponse> {
+        const job = await jobService.create(request);
+        
+        this.setStatus(202);
+        this.setHeader('Location', `/jobs/${job.jobId}`);
+        
+        return {
+          jobId: job.jobId,
+          status: 'pending'
+        };
+      }
+
+      // Check status: 200 OK or 303 See Other (when complete)
+      @Get('{jobId}')
+      public async getJob(jobId: string): Promise<JobResponse> {
+        const job = await jobService.getById(jobId);
+        
+        if (job.status === 'completed' && job.resultUrl) {
+          this.setStatus(303);
+          this.setHeader('Location', job.resultUrl);
+        }
+        
+        return job;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Appropriate Status Codes">
+    Follow HTTP semantics for status codes:
+    
+    ```typescript
+    // 200 OK - Successful GET, PUT, PATCH
+    // 201 Created - Successful POST that creates a resource
+    // 204 No Content - Successful DELETE
+    // 400 Bad Request - Invalid input
+    // 401 Unauthorized - Missing or invalid authentication
+    // 403 Forbidden - Authenticated but not authorized
+    // 404 Not Found - Resource doesn't exist
+    // 409 Conflict - Conflicting state (e.g., duplicate)
+    // 422 Unprocessable Entity - Valid syntax but semantic errors
+    // 500 Internal Server Error - Unexpected server errors
+    
+    @Route('users')
+    export class UserController extends Controller {
+      @Post()
+      @SuccessResponse('201', 'Created')
+      @Response<ValidationError>('400', 'Invalid input')
+      @Response<ConflictError>('409', 'Email already exists')
+      public async create(@Body() user: User): Promise<User> {
+        // Implementation
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Document All Response Types">
+    Use `@Response` for all possible responses:
+    
+    ```typescript
+    @Route('orders')
+    export class OrderController {
+      @Get('{orderId}')
+      @Response<ErrorResponse>('401', 'Unauthorized')
+      @Response<ErrorResponse>('403', 'Forbidden')
+      @Response<ErrorResponse>('404', 'Order not found')
+      @Response<ErrorResponse>('500', 'Internal server error')
+      public async getOrder(orderId: number): Promise<Order> {
+        return await orderService.getById(orderId);
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Type-Safe Error Responses">
+    Define error response types:
+    
+    ```typescript
+    // Define error types
+    export interface ApiError {
+      message: string;
+      code: string;
+      timestamp: string;
+    }
+
+    export interface ValidationError extends ApiError {
+      fields: Record<string, string[]>;
+    }
+
+    // Use in controllers
+    @Route('api')
+    export class ApiController {
+      @Post('data')
+      @Response<ValidationError>('400', 'Validation failed')
+      @Response<ApiError>('500', 'Server error')
+      public async createData(@Body() data: Data): Promise<Data> {
+        return await dataService.create(data);
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Set Appropriate Headers">
+    Include relevant headers in responses:
+    
+    ```typescript
+    @Route('resources')
+    export class ResourceController extends Controller {
+      @Post()
+      public async create(@Body() resource: Resource): Promise<Resource> {
+        const created = await resourceService.create(resource);
+        
+        // Set location header for created resource
+        this.setHeader('Location', `/resources/${created.id}`);
+        
+        // Set cache control
+        this.setHeader('Cache-Control', 'no-cache');
+        
+        // Set custom headers
+        this.setHeader('X-Resource-Version', created.version.toString());
+        
+        this.setStatus(201);
+        return created;
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Validate requests before processing
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Handle authentication errors
+  </Card>
+  <Card title="Controllers" icon="diagram-project" href="/concepts/controllers">
+    Learn more about controllers
+  </Card>
+  <Card title="Models" icon="cube" href="/concepts/models">
+    Define response models
+  </Card>
+</CardGroup>

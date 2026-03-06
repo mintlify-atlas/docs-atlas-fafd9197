@@ -1,0 +1,527 @@
+---
+title: CLI Commands
+description: Complete reference for all tsoa CLI commands and their options
+---
+
+The tsoa CLI provides three commands for generating OpenAPI specifications and route handlers. Each command accepts various flags to override configuration file settings.
+
+## Command Syntax
+
+```bash
+tsoa <command> [options]
+```
+
+<Tip>
+  Use `tsoa --help` to see all available commands, or `tsoa <command> --help` for command-specific options.
+</Tip>
+
+## spec
+
+Generates an OpenAPI specification file from your TypeScript controllers.
+
+```bash
+tsoa spec [options]
+```
+
+### What it does
+
+<Steps>
+
+<Step title="Scan Controllers">
+  Reads your TypeScript controllers starting from the entry file or using controller path globs
+</Step>
+
+<Step title="Extract Metadata">
+  Analyzes decorators (`@Route`, `@Get`, `@Post`, etc.) and TypeScript types to extract API metadata
+</Step>
+
+<Step title="Generate Specification">
+  Creates an OpenAPI 2.0, 3.0, or 3.1 specification file (JSON or YAML format)
+</Step>
+
+<Step title="Write Output">
+  Saves the specification to the configured output directory
+</Step>
+
+</Steps>
+
+### Options
+
+<ParamField path="--configuration" type="string" default="tsoa.json">
+  Path to the tsoa configuration file. Supports `.json`, `.yaml`, `.yml`, `.js`, and `.cjs` formats.
+  
+  ```bash
+  tsoa spec --configuration config/tsoa.production.json
+  tsoa spec -c tsoa.yaml
+  ```
+</ParamField>
+
+<ParamField path="--basePath" type="string">
+  Override the base API path defined in configuration. This is prepended to all route paths.
+  
+  ```bash
+  # Override basePath to /v2
+  tsoa spec --basePath /v2
+  
+  # Remove basePath
+  tsoa spec --basePath ""
+  ```
+</ParamField>
+
+<ParamField path="--host" type="string">
+  Override the API host defined in configuration. Used in OpenAPI 2.0 specs.
+  
+  ```bash
+  tsoa spec --host api.example.com
+  tsoa spec --host localhost:8080
+  ```
+</ParamField>
+
+<ParamField path="--yaml" type="boolean">
+  Force YAML output format instead of JSON.
+  
+  ```bash
+  tsoa spec --yaml
+  ```
+</ParamField>
+
+<ParamField path="--json" type="boolean">
+  Force JSON output format instead of YAML.
+  
+  ```bash
+  tsoa spec --json
+  ```
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+
+```bash Basic usage
+tsoa spec
+```
+
+```bash Production spec
+tsoa spec \
+  --configuration config/tsoa.prod.json \
+  --host api.production.com \
+  --basePath /api/v1
+```
+
+```bash YAML output
+tsoa spec --yaml
+```
+
+```bash Multiple environments
+# Development
+tsoa spec -c tsoa.dev.json --host localhost:3000
+
+# Staging
+tsoa spec -c tsoa.staging.json --host staging-api.example.com
+
+# Production
+tsoa spec -c tsoa.prod.json --host api.example.com
+```
+
+</CodeGroup>
+
+### Output
+
+Creates a specification file at:
+```
+{spec.outputDirectory}/{spec.specFileBaseName}.{json|yaml}
+```
+
+Default: `dist/swagger.json`
+
+<Note>
+  The `spec` command only generates the OpenAPI specification. To also generate route handlers, use `spec-and-routes`.
+</Note>
+
+## routes
+
+Generates route handler files with built-in validation for your chosen middleware framework.
+
+```bash
+tsoa routes [options]
+```
+
+### What it does
+
+<Steps>
+
+<Step title="Scan Controllers">
+  Reads your TypeScript controllers to understand routing requirements
+</Step>
+
+<Step title="Generate Route Handlers">
+  Creates middleware-specific route registration code (Express, Koa, or Hapi)
+</Step>
+
+<Step title="Add Validation">
+  Includes runtime validation based on TypeScript types and decorators
+</Step>
+
+<Step title="Wire Dependencies">
+  Integrates authentication and IoC modules if configured
+</Step>
+
+</Steps>
+
+### Options
+
+<ParamField path="--configuration" type="string" default="tsoa.json">
+  Path to the tsoa configuration file.
+  
+  ```bash
+  tsoa routes --configuration tsoa.json
+  tsoa routes -c config/tsoa.yaml
+  ```
+</ParamField>
+
+<ParamField path="--basePath" type="string">
+  Override the base API path for route generation.
+  
+  ```bash
+  tsoa routes --basePath /api/v1
+  ```
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+
+```bash Basic usage
+tsoa routes
+```
+
+```bash Custom configuration
+tsoa routes --configuration config/tsoa.local.json
+```
+
+```bash Override base path
+tsoa routes --basePath /api/v2
+```
+
+```bash With npm script
+# package.json
+{
+  "scripts": {
+    "generate:routes": "tsoa routes",
+    "watch:routes": "nodemon --watch src --exec npm run generate:routes"
+  }
+}
+```
+
+</CodeGroup>
+
+### Output
+
+Creates a routes file at:
+```
+{routes.routesDir}/{routes.routesFileName}
+```
+
+Default: `src/routes.ts`
+
+The generated file includes:
+
+- Route registration for your middleware framework
+- Request/response validation
+- Type coercion and sanitization
+- Authentication integration
+- Error handling
+
+<CodeGroup>
+
+```typescript routes.ts (Express)
+import { RegisterRoutes } from './routes';
+
+const app = express();
+app.use(express.json());
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+```typescript routes.ts (Koa)
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+app.use(bodyParser());
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+</CodeGroup>
+
+<Warning>
+  The generated routes file should be imported and registered in your application after generating it.
+</Warning>
+
+## spec-and-routes
+
+Generates both OpenAPI specification and route handlers in a single pass. This is more efficient than running `spec` and `routes` separately.
+
+```bash
+tsoa spec-and-routes [options]
+```
+
+### Why use this command?
+
+<CardGroup cols={2}>
+
+<Card title="Performance" icon="bolt">
+  Scans controllers once instead of twice, significantly faster for large projects
+</Card>
+
+<Card title="Consistency" icon="lock">
+  Ensures spec and routes are generated from identical metadata
+</Card>
+
+<Card title="Simplicity" icon="sparkles">
+  Single command for complete code generation
+</Card>
+
+<Card title="CI/CD Friendly" icon="cloud">
+  Simpler build scripts with one command
+</Card>
+
+</CardGroup>
+
+### Options
+
+Combines all options from both `spec` and `routes` commands:
+
+<ParamField path="--configuration" type="string" default="tsoa.json">
+  Path to the tsoa configuration file.
+  
+  ```bash
+  tsoa spec-and-routes -c tsoa.json
+  ```
+</ParamField>
+
+<ParamField path="--basePath" type="string">
+  Override the base API path for both spec and routes.
+  
+  ```bash
+  tsoa spec-and-routes --basePath /api/v1
+  ```
+</ParamField>
+
+<ParamField path="--host" type="string">
+  Override the API host in the generated specification.
+  
+  ```bash
+  tsoa spec-and-routes --host api.example.com
+  ```
+</ParamField>
+
+<ParamField path="--yaml" type="boolean">
+  Generate spec in YAML format.
+  
+  ```bash
+  tsoa spec-and-routes --yaml
+  ```
+</ParamField>
+
+<ParamField path="--json" type="boolean">
+  Generate spec in JSON format.
+  
+  ```bash
+  tsoa spec-and-routes --json
+  ```
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+
+```bash Basic usage
+tsoa spec-and-routes
+```
+
+```bash Production build
+tsoa spec-and-routes \
+  --configuration tsoa.prod.json \
+  --host api.example.com \
+  --basePath /api/v1 \
+  --json
+```
+
+```bash Development with watch
+# package.json
+{
+  "scripts": {
+    "gen": "tsoa spec-and-routes",
+    "dev": "nodemon --watch src --ext ts --exec 'npm run gen && ts-node src/server.ts'"
+  }
+}
+```
+
+```bash Multi-environment
+# Generate for all environments
+tsoa spec-and-routes -c config/tsoa.dev.json
+tsoa spec-and-routes -c config/tsoa.staging.json
+tsoa spec-and-routes -c config/tsoa.prod.json
+```
+
+</CodeGroup>
+
+### Output
+
+Generates both:
+
+1. **Specification file**: `{spec.outputDirectory}/{spec.specFileBaseName}.{json|yaml}`
+2. **Routes file**: `{routes.routesDir}/{routes.routesFileName}`
+
+<Tip>
+  Use `spec-and-routes` as your default command unless you specifically need only the spec or only the routes.
+</Tip>
+
+## Global Options
+
+These options work with any command:
+
+<ParamField path="--help, -h" type="boolean">
+  Display help information.
+  
+  ```bash
+  tsoa --help
+  tsoa spec --help
+  tsoa routes --help
+  ```
+</ParamField>
+
+<ParamField path="--version" type="boolean">
+  Display the tsoa version.
+  
+  ```bash
+  tsoa --version
+  ```
+</ParamField>
+
+## Exit Codes
+
+The CLI uses standard exit codes:
+
+| Code | Meaning | Common Causes |
+|------|---------|---------------|
+| `0` | Success | Generation completed without errors |
+| `1` | Error | Configuration errors, invalid TypeScript, missing files |
+
+### Handling Errors in Scripts
+
+```bash
+#!/bin/bash
+
+if tsoa spec-and-routes; then
+  echo "✓ Generation successful"
+  npm run build
+else
+  echo "✗ Generation failed"
+  exit 1
+fi
+```
+
+## Common Workflows
+
+### Development Mode
+
+```json package.json
+{
+  "scripts": {
+    "gen": "tsoa spec-and-routes",
+    "dev": "npm run gen && nodemon src/server.ts",
+    "dev:watch": "nodemon --watch src --ext ts --exec 'npm run gen && ts-node src/server.ts'"
+  }
+}
+```
+
+### Build Pipeline
+
+```json package.json
+{
+  "scripts": {
+    "clean": "rm -rf dist",
+    "gen": "tsoa spec-and-routes",
+    "compile": "tsc",
+    "build": "npm run clean && npm run gen && npm run compile",
+    "prebuild": "npm run gen"
+  }
+}
+```
+
+### Testing
+
+```json package.json
+{
+  "scripts": {
+    "pretest": "tsoa spec-and-routes",
+    "test": "jest",
+    "test:api": "npm run gen && newman run tests/postman-collection.json"
+  }
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Command not found">
+  ```
+  tsoa: command not found
+  ```
+  
+  **Solutions:**
+  - Use `npx tsoa` instead of `tsoa`
+  - Run via npm script: `npm run tsoa:gen`
+  - Install globally: `npm install -g tsoa` (not recommended)
+</Accordion>
+
+<Accordion title="Configuration file not found">
+  ```
+  No config file found at 'tsoa.json'
+  ```
+  
+  **Solutions:**
+  - Create a `tsoa.json` in your project root
+  - Specify the path: `tsoa spec -c path/to/config.json`
+  - Use a different format: `tsoa.yaml` or `tsoa.js`
+</Accordion>
+
+<Accordion title="Generation takes too long">
+  **Solutions:**
+  - Use `spec-and-routes` instead of running commands separately
+  - Add more paths to `ignore` in configuration
+  - Use `controllerPathGlobs` instead of scanning from `entryFile`
+  - Ensure TypeScript `skipLibCheck: true` in tsconfig.json
+</Accordion>
+
+<Accordion title="TypeScript errors during generation">
+  **Solutions:**
+  - Ensure your project compiles: `tsc --noEmit`
+  - Check `compilerOptions` in tsoa.json matches tsconfig.json
+  - Fix any type errors in controller files
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Configuration" icon="gear" href="/cli/configuration">
+  Learn about all configuration options
+</Card>
+
+<Card title="tsoa.json Reference" icon="file" href="/cli/tsoa-config">
+  Complete configuration schema
+</Card>
+
+</CardGroup>

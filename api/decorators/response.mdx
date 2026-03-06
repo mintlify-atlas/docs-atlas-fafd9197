@@ -1,0 +1,461 @@
+---
+title: "Response Decorators"
+description: "Define response types, status codes, and headers"
+---
+
+## Overview
+
+Response decorators document and control HTTP responses, including status codes, response types, headers, and content types. They generate accurate OpenAPI documentation and enable type-safe response handling.
+
+## @SuccessResponse
+
+Defines the success response status code and description for an endpoint.
+
+```typescript
+function SuccessResponse<HeaderType = object>(
+  name: string | number,
+  description?: string,
+  produces?: string | string[]
+): MethodDecorator
+```
+
+<ParamField path="name" type="string | number" required>
+  The HTTP status code (e.g., 200, 201, 204).
+</ParamField>
+
+<ParamField path="description" type="string" optional>
+  Description of the success response.
+</ParamField>
+
+<ParamField path="produces" type="string | string[]" optional>
+  Content type(s) for this response.
+</ParamField>
+
+### Usage
+
+```typescript
+import { Post, Body, Route, SuccessResponse } from 'tsoa';
+
+@Route('users')
+export class UserController {
+  @SuccessResponse(201, 'Created')
+  @Post()
+  public async createUser(
+    @Body() body: CreateUserRequest
+  ): Promise<User> {
+    const user = await userService.create(body);
+    this.setStatus(201);
+    return user;
+  }
+  
+  @SuccessResponse(204, 'No Content')
+  @Delete('{userId}')
+  public async deleteUser(@Path() userId: string): Promise<void> {
+    await userService.delete(userId);
+    this.setStatus(204);
+  }
+  
+  @SuccessResponse(418, "I'm a teapot")
+  @Get('teapot')
+  public async teapot(): Promise<void> {
+    this.setStatus(418);
+  }
+}
+```
+
+## @Response
+
+Defines error or alternative response types with status codes.
+
+```typescript
+function Response<ExampleType, HeaderType = object>(
+  name: HttpStatusCodeLiteral | HttpStatusCodeStringLiteral | OtherValidOpenApiHttpStatusCode,
+  description?: string,
+  example?: ExampleType,
+  produces?: string | string[]
+): MethodDecorator & ClassDecorator
+```
+
+<ParamField path="name" type="number | string" required>
+  The HTTP status code for this response (e.g., 400, 404, 500).
+</ParamField>
+
+<ParamField path="description" type="string" optional>
+  Description of this response type.
+</ParamField>
+
+<ParamField path="example" type="ExampleType" optional>
+  Example response body for this status code.
+</ParamField>
+
+<ParamField path="produces" type="string | string[]" optional>
+  Content type(s) for this response.
+</ParamField>
+
+### Method-Level Error Responses
+
+```typescript
+import { Get, Path, Route, Response } from 'tsoa';
+
+interface ErrorResponse {
+  message: string;
+  code: string;
+}
+
+@Route('users')
+export class UserController {
+  @Response<ErrorResponse>(404, 'User not found', {
+    message: 'User with specified ID does not exist',
+    code: 'USER_NOT_FOUND'
+  })
+  @Response<ErrorResponse>(400, 'Invalid request', {
+    message: 'User ID must be a valid UUID',
+    code: 'INVALID_USER_ID'
+  })
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    const user = await userService.findById(userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    return user;
+  }
+}
+```
+
+### Controller-Level Error Responses
+
+Apply the same error responses to all methods in a controller:
+
+```typescript
+import { Get, Post, Delete, Route, Response } from 'tsoa';
+
+interface ErrorResponse {
+  message: string;
+  code: string;
+  timestamp: Date;
+}
+
+@Response<ErrorResponse>(401, 'Unauthorized', {
+  message: 'Authentication required',
+  code: 'UNAUTHORIZED',
+  timestamp: new Date()
+})
+@Response<ErrorResponse>(403, 'Forbidden', {
+  message: 'Insufficient permissions',
+  code: 'FORBIDDEN',
+  timestamp: new Date()
+})
+@Response<ErrorResponse>(500, 'Internal Server Error', {
+  message: 'An unexpected error occurred',
+  code: 'INTERNAL_ERROR',
+  timestamp: new Date()
+})
+@Route('admin')
+export class AdminController {
+  // All methods inherit the controller-level @Response decorators
+  
+  @Get('users')
+  public async listUsers(): Promise<User[]> {
+    return await userService.findAll();
+  }
+  
+  @Delete('users/{userId}')
+  public async deleteUser(@Path() userId: string): Promise<void> {
+    await userService.delete(userId);
+  }
+}
+```
+
+### Multiple Status Codes
+
+```typescript
+@Response<ErrorResponse>(400, 'Bad Request')
+@Response<ErrorResponse>(404, 'Not Found')
+@Response<ErrorResponse>(409, 'Conflict')
+@Response<ErrorResponse>(451, 'Unavailable For Legal Reasons')
+@Post('posts')
+public async createPost(
+  @Body() body: CreatePostRequest
+): Promise<Post> {
+  return await postService.create(body);
+}
+```
+
+## @Res - Type-Safe Response Handler
+
+Injects a type-safe response function for sending alternative responses.
+
+```typescript
+function Res(): ParameterDecorator
+```
+
+Use with `TsoaResponse<Status, Data, Headers>` type for type checking:
+
+```typescript
+import { Get, Res, Route, TsoaResponse } from 'tsoa';
+
+interface ErrorResponse {
+  errorMessage: string;
+  errorCode: number;
+}
+
+@Route('api')
+export class ApiController {
+  /**
+   * @param errorResponse Error response handler
+   */
+  @Response<ErrorResponse>(400, 'Bad Request')
+  @Get('data/{id}')
+  public async getData(
+    @Path() id: string,
+    @Res() errorResponse: TsoaResponse<400, ErrorResponse, { 'X-Error-ID': string }>
+  ): Promise<DataResponse> {
+    if (!isValidId(id)) {
+      return errorResponse(400, {
+        errorMessage: 'Invalid ID format',
+        errorCode: 40001
+      }, {
+        'X-Error-ID': generateErrorId()
+      });
+    }
+    
+    return await dataService.get(id);
+  }
+  
+  @Response<ErrorResponse>(400, 'Bad Request')
+  @Response<ErrorResponse>(404, 'Not Found')
+  @Get('users/{userId}')
+  public async getUser(
+    @Path() userId: string,
+    @Res() notFoundResponse: TsoaResponse<404, ErrorResponse>,
+    @Res() badRequestResponse: TsoaResponse<400, ErrorResponse>
+  ): Promise<User> {
+    if (!isValidUserId(userId)) {
+      return badRequestResponse(400, {
+        errorMessage: 'Invalid user ID',
+        errorCode: 40002
+      });
+    }
+    
+    const user = await userService.findById(userId);
+    if (!user) {
+      return notFoundResponse(404, {
+        errorMessage: 'User not found',
+        errorCode: 40401
+      });
+    }
+    
+    return user;
+  }
+}
+```
+
+## @Produces
+
+Overrides the default content type for responses.
+
+```typescript
+function Produces(value: string): MethodDecorator & ClassDecorator
+```
+
+<ParamField path="value" type="string" required>
+  The content type (MIME type) for the response.
+</ParamField>
+
+### Method-Level Content Type
+
+```typescript
+import { Get, Route, Produces } from 'tsoa';
+
+@Route('files')
+export class FileController {
+  @Produces('text/plain')
+  @Get('readme')
+  public async getReadme(): Promise<string> {
+    return await fileService.readReadme();
+  }
+  
+  @Produces('application/pdf')
+  @Get('report/{reportId}')
+  public async getReport(@Path() reportId: string): Promise<Buffer> {
+    return await reportService.generatePdf(reportId);
+  }
+  
+  @Produces('image/png')
+  @Get('qrcode')
+  public async generateQRCode(@Query() data: string): Promise<Buffer> {
+    return await qrService.generate(data);
+  }
+  
+  @Produces('text/csv')
+  @Get('export')
+  public async exportData(): Promise<string> {
+    return await dataService.exportToCsv();
+  }
+}
+```
+
+### Controller-Level Content Type
+
+```typescript
+@Produces('application/json')
+@Route('api')
+export class ApiController {
+  // All methods return JSON by default
+  
+  @Get('data')
+  public async getData(): Promise<any> {
+    return { data: 'value' };
+  }
+  
+  // Override for specific method
+  @Produces('text/plain')
+  @Get('health')
+  public async health(): Promise<string> {
+    return 'OK';
+  }
+}
+```
+
+### Multiple Content Types
+
+```typescript
+@Produces('application/json')
+@Produces('application/xml')
+@Get('data')
+public async getData(
+  @Header('Accept') accept: string
+): Promise<Data> {
+  const data = await dataService.get();
+  if (accept.includes('xml')) {
+    this.setHeader('Content-Type', 'application/xml');
+  }
+  return data;
+}
+```
+
+## @Consumes
+
+Specifies the content type(s) accepted by a request body.
+
+```typescript
+function Consumes(value: string): MethodDecorator
+```
+
+<ParamField path="value" type="string" required>
+  The content type (MIME type) accepted for the request body.
+</ParamField>
+
+```typescript
+import { Post, Body, Route, Consumes } from 'tsoa';
+
+@Route('api')
+export class ApiController {
+  @Consumes('application/json')
+  @Post('data')
+  public async postJson(@Body() data: any): Promise<void> {
+    await dataService.save(data);
+  }
+  
+  @Consumes('application/xml')
+  @Post('xml')
+  public async postXml(@Body() xml: string): Promise<void> {
+    await dataService.saveXml(xml);
+  }
+  
+  @Consumes('multipart/form-data')
+  @Post('upload')
+  public async upload(
+    @UploadedFile() file: File,
+    @FormField() title: string
+  ): Promise<void> {
+    await fileService.upload(file, title);
+  }
+}
+```
+
+## Setting Response Headers
+
+Use the `setHeader` method from the Controller base class:
+
+```typescript
+import { Controller, Get, Route } from 'tsoa';
+
+@Route('api')
+export class ApiController extends Controller {
+  @Get('data')
+  public async getData(): Promise<Data> {
+    // Set a single header
+    this.setHeader('X-Custom-Header', 'value');
+    
+    // Set cache headers
+    this.setHeader('Cache-Control', 'public, max-age=3600');
+    this.setHeader('ETag', generateETag());
+    
+    // Set multiple Set-Cookie headers
+    this.setHeader('Set-Cookie', [
+      'token=abc123; HttpOnly; Secure',
+      'session=xyz789; HttpOnly; Secure'
+    ]);
+    
+    return await dataService.get();
+  }
+}
+```
+
+## Setting Status Codes
+
+Use the `setStatus` method from the Controller base class:
+
+```typescript
+import { Controller, Post, Delete, Route } from 'tsoa';
+
+@Route('resources')
+export class ResourceController extends Controller {
+  @Post()
+  public async create(@Body() data: CreateRequest): Promise<Resource> {
+    const resource = await resourceService.create(data);
+    this.setStatus(201); // Created
+    return resource;
+  }
+  
+  @Delete('{id}')
+  public async delete(@Path() id: string): Promise<void> {
+    await resourceService.delete(id);
+    this.setStatus(204); // No Content
+  }
+}
+```
+
+## Common HTTP Status Codes
+
+### Success Codes
+
+- `200` - OK: Standard success response
+- `201` - Created: Resource successfully created
+- `202` - Accepted: Request accepted for processing
+- `204` - No Content: Success with no response body
+
+### Client Error Codes
+
+- `400` - Bad Request: Invalid request syntax or parameters
+- `401` - Unauthorized: Authentication required
+- `403` - Forbidden: Authenticated but not authorized
+- `404` - Not Found: Resource does not exist
+- `409` - Conflict: Request conflicts with current state
+- `422` - Unprocessable Entity: Validation failed
+- `429` - Too Many Requests: Rate limit exceeded
+
+### Server Error Codes
+
+- `500` - Internal Server Error: Unexpected server error
+- `502` - Bad Gateway: Invalid response from upstream server
+- `503` - Service Unavailable: Server temporarily unavailable
+- `504` - Gateway Timeout: Upstream server timeout
+
+## See Also
+
+- [@Example Decorator](/api/decorators/example)
+- [HTTP Method Decorators](/api/decorators/methods)
+- [Parameter Decorators](/api/decorators/parameters)

@@ -1,0 +1,746 @@
+---
+title: Testing
+description: Comprehensive testing strategies for tsoa applications including unit tests, integration tests, and testing best practices
+---
+
+Testing tsoa applications requires understanding how to test controllers, validate generated routes, and ensure your API contracts match the OpenAPI specification. This guide covers testing strategies from unit tests to full integration tests.
+
+## Overview
+
+Testing a tsoa application typically involves:
+
+- **Unit tests**: Testing controller methods in isolation
+- **Integration tests**: Testing the generated routes with a running server
+- **Contract tests**: Ensuring OpenAPI spec matches implementation
+- **Validation tests**: Verifying request/response validation works correctly
+
+<Note>
+  tsoa's code generation means you should test both your controller logic and the generated routes to ensure the metadata extraction and route generation work correctly.
+</Note>
+
+## Unit Testing Controllers
+
+### Basic Controller Tests
+
+Test controller methods directly without involving HTTP:
+
+```typescript
+import { expect } from 'chai';
+import { UserController } from '../src/controllers/userController';
+import { userService } from '../src/services/userService';
+import sinon from 'sinon';
+
+describe('UserController', () => {
+  let controller: UserController;
+  let serviceStub: sinon.SinonStubbedInstance<typeof userService>;
+  
+  beforeEach(() => {
+    controller = new UserController();
+    serviceStub = sinon.stub(userService);
+  });
+  
+  afterEach(() => {
+    sinon.restore();
+  });
+  
+  describe('getUser', () => {
+    it('should return user when found', async () => {
+      const mockUser = {
+        id: 1,
+        name: 'John Doe',
+        email: 'john@example.com'
+      };
+      
+      serviceStub.findById.resolves(mockUser);
+      
+      const result = await controller.getUser(1);
+      
+      expect(result).to.deep.equal(mockUser);
+      expect(serviceStub.findById.calledOnceWith(1)).to.be.true;
+    });
+    
+    it('should throw NotFoundError when user not found', async () => {
+      serviceStub.findById.resolves(null);
+      
+      try {
+        await controller.getUser(999);
+        expect.fail('Should have thrown NotFoundError');
+      } catch (error) {
+        expect(error).to.be.instanceOf(NotFoundError);
+        expect(error.message).to.include('999');
+      }
+    });
+  });
+  
+  describe('createUser', () => {
+    it('should create user with valid data', async () => {
+      const createRequest = {
+        name: 'Jane Doe',
+        email: 'jane@example.com',
+        age: 25
+      };
+      
+      const createdUser = {
+        id: 2,
+        ...createRequest
+      };
+      
+      serviceStub.create.resolves(createdUser);
+      
+      const result = await controller.createUser(createRequest);
+      
+      expect(result).to.deep.equal(createdUser);
+      expect(serviceStub.create.calledOnceWith(createRequest)).to.be.true;
+    });
+    
+    it('should throw ConflictError when email exists', async () => {
+      const createRequest = {
+        name: 'Jane Doe',
+        email: 'existing@example.com',
+        age: 25
+      };
+      
+      serviceStub.findByEmail.resolves({ id: 1, email: 'existing@example.com' });
+      
+      try {
+        await controller.createUser(createRequest);
+        expect.fail('Should have thrown ConflictError');
+      } catch (error) {
+        expect(error).to.be.instanceOf(ConflictError);
+      }
+    });
+  });
+});
+```
+
+### Testing Controller Context
+
+Test methods that use controller context (request, response):
+
+```typescript
+import { expect } from 'chai';
+import { Controller } from 'tsoa';
+import { AuthController } from '../src/controllers/authController';
+import express from 'express';
+
+describe('AuthController', () => {
+  let controller: AuthController;
+  let mockRequest: Partial<express.Request>;
+  let mockResponse: Partial<express.Response>;
+  
+  beforeEach(() => {
+    controller = new AuthController();
+    
+    mockRequest = {
+      headers: {},
+      body: {}
+    };
+    
+    mockResponse = {
+      setHeader: sinon.stub(),
+      status: sinon.stub().returnsThis(),
+      json: sinon.stub()
+    };
+    
+    // Inject mock request/response into controller
+    (controller as any).request = mockRequest;
+    (controller as any).response = mockResponse;
+  });
+  
+  describe('login', () => {
+    it('should set authentication cookie on successful login', async () => {
+      const credentials = {
+        email: 'user@example.com',
+        password: 'password123'
+      };
+      
+      const result = await controller.login(credentials);
+      
+      expect(mockResponse.setHeader).to.have.been.calledWith(
+        'Set-Cookie',
+        sinon.match(/^token=/)
+      );
+      expect(result).to.have.property('token');
+    });
+  });
+});
+```
+
+## Integration Testing
+
+### Setting Up Integration Tests
+
+Test the full request/response cycle with generated routes:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+
+const basePath = '/api/v1';
+
+describe('User API Integration Tests', () => {
+  describe('GET /users/:userId', () => {
+    it('should return user when ID exists', async () => {
+      const response = await request(app)
+        .get(`${basePath}/users/1`)
+        .expect(200);
+      
+      expect(response.body).to.have.property('id', 1);
+      expect(response.body).to.have.property('name');
+      expect(response.body).to.have.property('email');
+    });
+    
+    it('should return 404 when user not found', async () => {
+      const response = await request(app)
+        .get(`${basePath}/users/999`)
+        .expect(404);
+      
+      expect(response.body).to.have.property('message');
+      expect(response.body.message).to.include('not found');
+    });
+    
+    it('should return 400 for invalid user ID', async () => {
+      const response = await request(app)
+        .get(`${basePath}/users/invalid`)
+        .expect(400);
+      
+      expect(response.body).to.have.property('fields');
+      expect(response.body.fields).to.have.property('userId');
+    });
+  });
+  
+  describe('POST /users', () => {
+    it('should create user with valid data', async () => {
+      const newUser = {
+        name: 'Test User',
+        email: 'test@example.com',
+        age: 25
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/users`)
+        .send(newUser)
+        .expect(201);
+      
+      expect(response.body).to.have.property('id');
+      expect(response.body.name).to.equal(newUser.name);
+      expect(response.body.email).to.equal(newUser.email);
+    });
+    
+    it('should validate required fields', async () => {
+      const invalidUser = {
+        name: 'Test'
+        // missing email
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/users`)
+        .send(invalidUser)
+        .expect(400);
+      
+      expect(response.body.fields).to.have.property('email');
+      expect(response.body.fields.email.message).to.include('required');
+    });
+    
+    it('should validate field constraints', async () => {
+      const invalidUser = {
+        name: 'AB', // too short (min 3)
+        email: 'not-an-email',
+        age: 15 // too young (min 18)
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/users`)
+        .send(invalidUser)
+        .expect(400);
+      
+      expect(response.body.fields).to.have.property('name');
+      expect(response.body.fields).to.have.property('email');
+      expect(response.body.fields).to.have.property('age');
+    });
+  });
+});
+```
+
+### Testing Authentication
+
+Test routes with authentication requirements:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+import jwt from 'jsonwebtoken';
+
+const basePath = '/api/v1';
+
+function generateToken(payload: any): string {
+  return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: '1h' });
+}
+
+describe('Protected Routes', () => {
+  describe('GET /admin/users', () => {
+    it('should return 401 without token', async () => {
+      await request(app)
+        .get(`${basePath}/admin/users`)
+        .expect(401);
+    });
+    
+    it('should return 401 with invalid token', async () => {
+      await request(app)
+        .get(`${basePath}/admin/users`)
+        .set('Authorization', 'Bearer invalid-token')
+        .expect(401);
+    });
+    
+    it('should return 403 without required scope', async () => {
+      const token = generateToken({
+        id: 1,
+        email: 'user@example.com',
+        scopes: ['user']
+      });
+      
+      await request(app)
+        .get(`${basePath}/admin/users`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+    
+    it('should return users with valid admin token', async () => {
+      const token = generateToken({
+        id: 1,
+        email: 'admin@example.com',
+        scopes: ['admin']
+      });
+      
+      const response = await request(app)
+        .get(`${basePath}/admin/users`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      
+      expect(response.body).to.be.an('array');
+    });
+  });
+});
+```
+
+### Testing File Uploads
+
+Test endpoints that handle file uploads:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+import path from 'path';
+import fs from 'fs';
+
+const basePath = '/api/v1';
+
+describe('File Upload', () => {
+  describe('POST /upload/avatar', () => {
+    it('should upload image file', async () => {
+      const testImagePath = path.join(__dirname, 'fixtures', 'test-image.png');
+      
+      const response = await request(app)
+        .post(`${basePath}/upload/avatar`)
+        .attach('file', testImagePath)
+        .expect(200);
+      
+      expect(response.body).to.have.property('url');
+      expect(response.body.url).to.match(/\.(png|jpg|jpeg)$/);
+    });
+    
+    it('should reject non-image files', async () => {
+      const testFilePath = path.join(__dirname, 'fixtures', 'test.txt');
+      
+      await request(app)
+        .post(`${basePath}/upload/avatar`)
+        .attach('file', testFilePath)
+        .expect(400);
+    });
+    
+    it('should enforce file size limits', async () => {
+      // Create a large file for testing
+      const largeFilePath = path.join(__dirname, 'fixtures', 'large-file.bin');
+      const size = 10 * 1024 * 1024; // 10MB
+      
+      fs.writeFileSync(largeFilePath, Buffer.alloc(size));
+      
+      try {
+        await request(app)
+          .post(`${basePath}/upload/avatar`)
+          .attach('file', largeFilePath)
+          .expect(413);
+      } finally {
+        fs.unlinkSync(largeFilePath);
+      }
+    });
+  });
+});
+```
+
+## Testing Middleware
+
+Test that middleware executes correctly:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+import { getMiddlewareState } from '../src/controllers/testController';
+
+describe('Middleware Execution', () => {
+  it('should execute controller-level middleware', async () => {
+    await request(app)
+      .get('/test/endpoint')
+      .expect(200);
+    
+    expect(getMiddlewareState('controller')).to.be.true;
+  });
+  
+  it('should execute method-level middleware', async () => {
+    await request(app)
+      .get('/test/endpoint')
+      .expect(200);
+    
+    expect(getMiddlewareState('method')).to.be.true;
+  });
+  
+  it('should execute middleware in correct order', async () => {
+    const executionOrder: string[] = [];
+    
+    // Set up middleware that tracks execution order
+    await request(app)
+      .get('/test/middleware-order')
+      .expect(200);
+    
+    expect(executionOrder).to.deep.equal([
+      'controller-middleware',
+      'method-middleware-1',
+      'method-middleware-2',
+      'handler'
+    ]);
+  });
+});
+```
+
+## Validation Tests
+
+Test tsoa's validation behavior thoroughly:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+
+const basePath = '/api/v1';
+
+describe('Validation Tests', () => {
+  describe('Union Type Validation', () => {
+    it('should validate union types correctly', async () => {
+      const validUnionData = {
+        unionProperty: {
+          type: 'typeA',
+          valueA: 'test'
+        }
+      };
+      
+      await request(app)
+        .post(`${basePath}/validation/union`)
+        .send(validUnionData)
+        .expect(200);
+    });
+    
+    it('should return reasonable error size for union failures', async () => {
+      const invalidUnionData = {
+        unionProperty: {
+          type: 'invalid',
+          unknownProp: 'value'
+        }
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/validation/union`)
+        .send(invalidUnionData)
+        .expect(400);
+      
+      const responseSize = JSON.stringify(response.body).length;
+      expect(responseSize).to.be.lessThan(2000);
+    });
+  });
+  
+  describe('Nested Object Validation', () => {
+    it('should validate deeply nested objects', async () => {
+      const deepInvalidData = {
+        level1: {
+          level2: {
+            level3: {
+              shouldBeString: 123 // wrong type
+            }
+          }
+        }
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/validation/deep`)
+        .send(deepInvalidData)
+        .expect(400);
+      
+      expect(response.body.fields).to.exist;
+      expect(response.body.message).to.include('Validation');
+    });
+  });
+  
+  describe('Additional Properties', () => {
+    it('should handle excess properties according to config', async () => {
+      const dataWithExtras = {
+        name: 'Test',
+        email: 'test@example.com',
+        extraField: 'not allowed'
+      };
+      
+      const response = await request(app)
+        .post(`${basePath}/validation/strict`)
+        .send(dataWithExtras)
+        .expect(400);
+      
+      expect(response.body.fields).to.have.property('extraField');
+    });
+  });
+});
+```
+
+## Performance Testing
+
+Test validation performance with complex types:
+
+```typescript
+import { expect } from 'chai';
+import request from 'supertest';
+import { app } from '../src/server';
+
+describe('Validation Performance', () => {
+  it('should validate large unions quickly', async () => {
+    const largeUnionData = {
+      largeUnion: {
+        type: 'unknownType',
+        value: 'does not match any schema'
+      }
+    };
+    
+    const startTime = Date.now();
+    
+    await request(app)
+      .post(`${basePath}/validation/large-union`)
+      .send(largeUnionData)
+      .expect(400);
+    
+    const duration = Date.now() - startTime;
+    
+    expect(duration).to.be.lessThan(1000); // Under 1 second
+  });
+  
+  it('should handle complex nested validation efficiently', async () => {
+    const complexData = {
+      // Very complex nested structure
+    };
+    
+    const startTime = Date.now();
+    
+    await request(app)
+      .post(`${basePath}/validation/complex`)
+      .send(complexData);
+    
+    const duration = Date.now() - startTime;
+    
+    expect(duration).to.be.lessThan(500);
+  });
+});
+```
+
+## Testing Generated Routes
+
+Verify that route generation works correctly:
+
+```typescript
+import { expect } from 'chai';
+import { DummyRouteGenerator } from '../src/generators/dummyRouteGenerator';
+import { MetadataGenerator } from '@tsoa/cli';
+
+describe('Route Generation', () => {
+  it('should generate routes for all controllers', async () => {
+    const metadata = new MetadataGenerator('./tsoa.json').Generate();
+    const generator = new DummyRouteGenerator(metadata, {});
+    
+    await generator.GenerateCustomRoutes();
+    
+    expect(DummyRouteGenerator.getCallCount()).to.be.greaterThan(0);
+  });
+  
+  it('should include all controller methods', () => {
+    const metadata = new MetadataGenerator('./tsoa.json').Generate();
+    
+    const userController = metadata.controllers.find(
+      c => c.name === 'UserController'
+    );
+    
+    expect(userController).to.exist;
+    expect(userController!.methods).to.have.length.greaterThan(0);
+    
+    const getMethods = userController!.methods.filter(m => m.method === 'get');
+    expect(getMethods.length).to.be.greaterThan(0);
+  });
+});
+```
+
+## Test Fixtures and Helpers
+
+Create reusable test utilities:
+
+```typescript
+// test/helpers/requestHelpers.ts
+import request from 'supertest';
+import { Application } from 'express';
+
+export async function verifyGetRequest(
+  app: Application,
+  path: string,
+  callback: (err: any, res: any) => void,
+  expectedStatus = 200
+) {
+  const response = await request(app).get(path).expect(expectedStatus);
+  callback(null, response);
+}
+
+export async function verifyPostRequest(
+  app: Application,
+  path: string,
+  data: any,
+  callback: (err: any, res: any) => void,
+  expectedStatus = 200
+) {
+  try {
+    const response = await request(app)
+      .post(path)
+      .send(data)
+      .expect(expectedStatus);
+    callback(null, response);
+  } catch (error) {
+    callback(error, null);
+  }
+}
+
+export async function verifyFileUploadRequest(
+  app: Application,
+  path: string,
+  fieldName: string,
+  filePath: string,
+  expectedStatus = 200
+) {
+  return request(app)
+    .post(path)
+    .attach(fieldName, filePath)
+    .expect(expectedStatus);
+}
+```
+
+```typescript
+// test/fixtures/testModels.ts
+export interface TestModel {
+  id: number;
+  stringValue: string;
+  numberValue?: number;
+}
+
+export interface CreateTestRequest {
+  stringValue: string;
+  numberValue?: number;
+}
+
+export const validTestModel: TestModel = {
+  id: 1,
+  stringValue: 'test',
+  numberValue: 42
+};
+
+export const invalidTestModels = {
+  missingRequired: {
+    id: 1
+    // missing stringValue
+  },
+  wrongType: {
+    id: 'not-a-number',
+    stringValue: 'test'
+  }
+};
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Test at multiple levels">
+    Write unit tests for business logic, integration tests for HTTP behavior, and contract tests for OpenAPI compliance.
+  </Step>
+  
+  <Step title="Use test fixtures">
+    Create reusable test data and helper functions to reduce duplication.
+  </Step>
+  
+  <Step title="Test validation thoroughly">
+    Verify both valid and invalid inputs, including edge cases and boundary conditions.
+  </Step>
+  
+  <Step title="Test error scenarios">
+    Ensure error handling works correctly for all expected error conditions.
+  </Step>
+  
+  <Step title="Mock external dependencies">
+    Use mocking libraries like Sinon to isolate controller logic from external services.
+  </Step>
+  
+  <Step title="Run tests in CI/CD">
+    Automate tests as part of your build pipeline to catch regressions early.
+  </Step>
+  
+  <Step title="Test generated code">
+    Don't assume route generation works - verify it with integration tests.
+  </Step>
+</Steps>
+
+## Running Tests
+
+Set up test scripts in `package.json`:
+
+```json
+{
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "mocha 'test/unit/**/*.spec.ts'",
+    "test:integration": "mocha 'test/integration/**/*.spec.ts'",
+    "test:watch": "mocha --watch 'test/**/*.spec.ts'",
+    "test:coverage": "nyc npm test"
+  }
+}
+```
+
+<Note>
+  Remember to regenerate routes before running integration tests: `npm run tsoa:routes && npm test`
+</Note>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Learn about tsoa's validation capabilities
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation" href="/advanced/error-handling">
+    Understand error handling for better test assertions
+  </Card>
+  
+  <Card title="Middleware" icon="layer-group" href="/advanced/middleware">
+    Test middleware execution and behavior
+  </Card>
+</CardGroup>

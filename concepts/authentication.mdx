@@ -1,0 +1,840 @@
+---
+title: 'Authentication'
+description: 'Secure your API endpoints with authentication and authorization'
+icon: 'lock'
+---
+
+## Overview
+
+tsoa provides a flexible authentication system through the `@Security` decorator. You can implement various authentication strategies including API keys, JWT, OAuth2, and custom schemes.
+
+<Note>
+  Authentication handlers are defined in your tsoa configuration and invoked automatically before secured endpoints are executed.
+</Note>
+
+## Basic Authentication
+
+### Securing Endpoints
+
+Use the `@Security` decorator to protect endpoints:
+
+```typescript
+import { Route, Get, Security } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Get()
+  @Security('api_key')
+  public async getUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Get('{userId}')
+  @Security('api_key')
+  public async getUser(userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+}
+```
+
+### Controller-Level Security
+
+Apply security to all endpoints in a controller:
+
+```typescript
+import { Route, Get, Post, Security } from '@tsoa/runtime';
+
+@Route('admin')
+@Security('jwt')  // Applies to all methods
+export class AdminController {
+  @Get('users')
+  public async getAllUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Post('users')
+  public async createUser(@Body() user: User): Promise<User> {
+    return await userService.create(user);
+  }
+}
+```
+
+### Disabling Security
+
+Override controller-level security for specific endpoints:
+
+```typescript
+import { Route, Get, Post, Security, NoSecurity } from '@tsoa/runtime';
+
+@Route('api')
+@Security('jwt')  // Default for all methods
+export class ApiController {
+  @Get('protected')
+  public async getProtected(): Promise<Data> {
+    // Requires JWT authentication
+    return await dataService.getProtected();
+  }
+
+  @Get('public')
+  @NoSecurity()  // Override: no authentication required
+  public async getPublic(): Promise<Data> {
+    return await dataService.getPublic();
+  }
+}
+```
+
+## Authentication Handler
+
+Define authentication logic in your tsoa configuration:
+
+### Express Example
+
+```typescript
+// authentication.ts
+import { Request } from 'express';
+
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'api_key') {
+    const apiKey = request.headers['x-api-key'];
+    
+    if (!apiKey) {
+      throw new Error('No API key provided');
+    }
+    
+    const isValid = await validateApiKey(apiKey as string);
+    
+    if (!isValid) {
+      throw new Error('Invalid API key');
+    }
+    
+    return { apiKey };
+  }
+
+  if (securityName === 'jwt') {
+    const token = request.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    try {
+      const decoded = await verifyJwt(token);
+      
+      // Check scopes if required
+      if (scopes) {
+        for (const scope of scopes) {
+          if (!decoded.scopes.includes(scope)) {
+            throw new Error(`Missing required scope: ${scope}`);
+          }
+        }
+      }
+      
+      return decoded;
+    } catch (error) {
+      throw new Error('Invalid token');
+    }
+  }
+
+  throw new Error('Unknown security scheme');
+}
+```
+
+### Koa Example
+
+```typescript
+// authentication.ts
+import { Context } from 'koa';
+
+export async function koaAuthentication(
+  context: Context,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'api_key') {
+    const apiKey = context.headers['x-api-key'];
+    
+    if (!apiKey) {
+      context.throw(401, 'No API key provided');
+    }
+    
+    const isValid = await validateApiKey(apiKey as string);
+    
+    if (!isValid) {
+      context.throw(401, 'Invalid API key');
+    }
+    
+    return { apiKey };
+  }
+
+  if (securityName === 'jwt') {
+    const token = context.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!token) {
+      context.throw(401, 'No token provided');
+    }
+    
+    try {
+      const decoded = await verifyJwt(token);
+      
+      if (scopes) {
+        for (const scope of scopes) {
+          if (!decoded.scopes.includes(scope)) {
+            context.throw(403, `Missing required scope: ${scope}`);
+          }
+        }
+      }
+      
+      return decoded;
+    } catch (error) {
+      context.throw(401, 'Invalid token');
+    }
+  }
+
+  context.throw(500, 'Unknown security scheme');
+}
+```
+
+## API Key Authentication
+
+Implement API key authentication:
+
+```typescript
+// models/auth.ts
+export interface ApiKeyInfo {
+  apiKey: string;
+  userId: number;
+  permissions: string[];
+}
+
+// authentication.ts
+export async function expressAuthentication(
+  request: Request,
+  securityName: string
+): Promise<ApiKeyInfo> {
+  if (securityName === 'api_key') {
+    const apiKey = 
+      request.headers['x-api-key'] || 
+      request.query.api_key;
+    
+    if (!apiKey) {
+      throw new Error('API key required');
+    }
+    
+    // Validate against database
+    const keyInfo = await db.apiKeys.findOne({ key: apiKey });
+    
+    if (!keyInfo || !keyInfo.isActive) {
+      throw new Error('Invalid or inactive API key');
+    }
+    
+    // Check rate limits
+    const rateLimitOk = await checkRateLimit(keyInfo.userId);
+    if (!rateLimitOk) {
+      throw new Error('Rate limit exceeded');
+    }
+    
+    return {
+      apiKey: keyInfo.key,
+      userId: keyInfo.userId,
+      permissions: keyInfo.permissions
+    };
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+
+// controller.ts
+@Route('data')
+export class DataController {
+  @Get()
+  @Security('api_key')
+  public async getData(
+    @Request() request: RequestWithUser
+  ): Promise<Data[]> {
+    // Access authenticated user info
+    const user = request.user;
+    return await dataService.getForUser(user.userId);
+  }
+}
+```
+
+## JWT Authentication
+
+Implement JWT bearer token authentication:
+
+```typescript
+import jwt from 'jsonwebtoken';
+
+// models/auth.ts
+export interface JwtPayload {
+  userId: number;
+  email: string;
+  roles: string[];
+  scopes: string[];
+}
+
+// authentication.ts
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<JwtPayload> {
+  if (securityName === 'jwt') {
+    const authHeader = request.headers['authorization'];
+    
+    if (!authHeader) {
+      throw new Error('Authorization header required');
+    }
+    
+    const [scheme, token] = authHeader.split(' ');
+    
+    if (scheme !== 'Bearer') {
+      throw new Error('Invalid authentication scheme');
+    }
+    
+    if (!token) {
+      throw new Error('Token required');
+    }
+    
+    try {
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET!
+      ) as JwtPayload;
+      
+      // Validate token hasn't been revoked
+      const isRevoked = await db.revokedTokens.exists({ token });
+      if (isRevoked) {
+        throw new Error('Token has been revoked');
+      }
+      
+      // Check required scopes
+      if (scopes) {
+        const hasAllScopes = scopes.every(scope => 
+          decoded.scopes.includes(scope)
+        );
+        
+        if (!hasAllScopes) {
+          throw new Error('Insufficient permissions');
+        }
+      }
+      
+      return decoded;
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new Error('Token expired');
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new Error('Invalid token');
+      }
+      throw error;
+    }
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+## OAuth2 with Scopes
+
+Implement OAuth2 authentication with scope-based authorization:
+
+```typescript
+import { Route, Get, Post, Delete, Security } from '@tsoa/runtime';
+
+@Route('posts')
+export class PostController {
+  @Get()
+  @Security('oauth2', ['read:posts'])
+  public async getPosts(): Promise<Post[]> {
+    return await postService.getAll();
+  }
+
+  @Post()
+  @Security('oauth2', ['write:posts'])
+  public async createPost(@Body() post: Post): Promise<Post> {
+    return await postService.create(post);
+  }
+
+  @Delete('{postId}')
+  @Security('oauth2', ['write:posts', 'delete:posts'])
+  public async deletePost(postId: number): Promise<void> {
+    await postService.delete(postId);
+  }
+}
+
+// authentication.ts
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'oauth2') {
+    const token = request.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('Token required');
+    }
+    
+    // Validate with OAuth2 provider
+    const tokenInfo = await validateOAuth2Token(token);
+    
+    if (!tokenInfo.active) {
+      throw new Error('Invalid token');
+    }
+    
+    // Check scopes
+    if (scopes) {
+      const hasAllScopes = scopes.every(scope => 
+        tokenInfo.scopes.includes(scope)
+      );
+      
+      if (!hasAllScopes) {
+        throw new Error(
+          `Missing required scopes: ${scopes.join(', ')}`
+        );
+      }
+    }
+    
+    return tokenInfo;
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+## Multiple Authentication Schemes
+
+### OR Authentication
+
+Allow multiple authentication methods (any one succeeds):
+
+```typescript
+import { Route, Get, Security } from '@tsoa/runtime';
+
+@Route('data')
+export class DataController {
+  // Accepts either JWT or API key
+  @Get()
+  @Security('jwt')
+  @Security('api_key')
+  public async getData(): Promise<Data[]> {
+    return await dataService.getAll();
+  }
+}
+```
+
+The authentication handler will try each scheme in order:
+
+```typescript
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'jwt') {
+    // Try JWT authentication
+    const token = request.headers['authorization']?.replace('Bearer ', '');
+    if (token) {
+      try {
+        return await verifyJwt(token);
+      } catch (error) {
+        // JWT failed, will try next scheme
+        throw error;
+      }
+    }
+    throw new Error('No JWT token provided');
+  }
+  
+  if (securityName === 'api_key') {
+    // Try API key authentication
+    const apiKey = request.headers['x-api-key'];
+    if (apiKey) {
+      const isValid = await validateApiKey(apiKey as string);
+      if (isValid) {
+        return { apiKey };
+      }
+    }
+    throw new Error('Invalid API key');
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+### AND Authentication
+
+Require multiple authentication methods (all must succeed):
+
+```typescript
+import { Route, Get, Security } from '@tsoa/runtime';
+
+@Route('admin')
+export class AdminController {
+  // Requires BOTH JWT and API key
+  @Get('sensitive')
+  @Security({
+    jwt: ['admin'],
+    api_key: []
+  })
+  public async getSensitiveData(): Promise<Data> {
+    return await dataService.getSensitive();
+  }
+}
+```
+
+## Accessing User Information
+
+Access authenticated user data in your controllers:
+
+```typescript
+import { Request as ExpressRequest } from 'express';
+
+interface RequestWithUser extends ExpressRequest {
+  user?: {
+    userId: number;
+    email: string;
+    roles: string[];
+  };
+}
+
+@Route('profile')
+export class ProfileController {
+  @Get()
+  @Security('jwt')
+  public async getProfile(
+    @Request() request: RequestWithUser
+  ): Promise<UserProfile> {
+    const userId = request.user!.userId;
+    return await userService.getProfile(userId);
+  }
+
+  @Put()
+  @Security('jwt')
+  public async updateProfile(
+    @Request() request: RequestWithUser,
+    @Body() updates: ProfileUpdates
+  ): Promise<UserProfile> {
+    const userId = request.user!.userId;
+    return await userService.updateProfile(userId, updates);
+  }
+}
+```
+
+## Role-Based Access Control
+
+Implement role-based authorization:
+
+```typescript
+// authentication.ts
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'jwt') {
+    const token = request.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error('Token required');
+    }
+    
+    const decoded = await verifyJwt(token);
+    
+    // Check roles (scopes used for roles)
+    if (scopes && scopes.length > 0) {
+      const hasRequiredRole = scopes.some(role => 
+        decoded.roles.includes(role)
+      );
+      
+      if (!hasRequiredRole) {
+        throw new Error(
+          `Access denied. Required role: ${scopes.join(' or ')}`
+        );
+      }
+    }
+    
+    // Attach user to request
+    request.user = decoded;
+    
+    return decoded;
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+
+// controllers/admin.ts
+@Route('admin')
+export class AdminController {
+  @Get('users')
+  @Security('jwt', ['admin'])
+  public async getAllUsers(): Promise<User[]> {
+    return await userService.getAll();
+  }
+
+  @Post('users')
+  @Security('jwt', ['admin', 'super_admin'])
+  public async createUser(@Body() user: User): Promise<User> {
+    return await userService.create(user);
+  }
+
+  @Delete('users/{userId}')
+  @Security('jwt', ['super_admin'])
+  public async deleteUser(userId: number): Promise<void> {
+    await userService.delete(userId);
+  }
+}
+
+// controllers/moderator.ts
+@Route('posts')
+export class PostModerationController {
+  @Post('{postId}/approve')
+  @Security('jwt', ['admin', 'moderator'])
+  public async approvePost(postId: number): Promise<Post> {
+    return await postService.approve(postId);
+  }
+
+  @Delete('{postId}')
+  @Security('jwt', ['admin', 'moderator'])
+  public async deletePost(postId: number): Promise<void> {
+    await postService.delete(postId);
+  }
+}
+```
+
+## Security Configuration
+
+Define security schemes in your `tsoa.json`:
+
+```json
+{
+  "spec": {
+    "securityDefinitions": {
+      "api_key": {
+        "type": "apiKey",
+        "name": "x-api-key",
+        "in": "header"
+      },
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://example.com/oauth/authorize",
+            "tokenUrl": "https://example.com/oauth/token",
+            "scopes": {
+              "read:posts": "Read posts",
+              "write:posts": "Create and update posts",
+              "delete:posts": "Delete posts",
+              "admin": "Administrative access"
+            }
+          }
+        }
+      },
+      "basic": {
+        "type": "http",
+        "scheme": "basic"
+      }
+    }
+  }
+}
+```
+
+## Error Handling
+
+Handle authentication errors properly:
+
+```typescript
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  try {
+    if (securityName === 'jwt') {
+      const token = request.headers['authorization']?.replace('Bearer ', '');
+      
+      if (!token) {
+        const error: any = new Error('No token provided');
+        error.status = 401;
+        throw error;
+      }
+      
+      const decoded = await verifyJwt(token);
+      
+      if (scopes) {
+        const hasScopes = scopes.every(scope => 
+          decoded.scopes.includes(scope)
+        );
+        
+        if (!hasScopes) {
+          const error: any = new Error('Insufficient permissions');
+          error.status = 403;
+          throw error;
+        }
+      }
+      
+      return decoded;
+    }
+    
+    const error: any = new Error('Unknown security scheme');
+    error.status = 500;
+    throw error;
+  } catch (error: any) {
+    // Ensure errors have proper status codes
+    if (!error.status) {
+      error.status = 401;
+    }
+    throw error;
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use HTTPS in Production">
+    Always use HTTPS to protect authentication credentials:
+    
+    ```typescript
+    // Configure your server to enforce HTTPS
+    app.use((req, res, next) => {
+      if (req.secure || process.env.NODE_ENV !== 'production') {
+        next();
+      } else {
+        res.redirect(`https://${req.headers.host}${req.url}`);
+      }
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Implement Rate Limiting">
+    Protect authentication endpoints from brute force:
+    
+    ```typescript
+    import rateLimit from 'express-rate-limit';
+
+    const authLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 5, // 5 requests per window
+      message: 'Too many authentication attempts'
+    });
+
+    app.use('/auth/login', authLimiter);
+    ```
+  </Accordion>
+
+  <Accordion title="Validate Tokens Thoroughly">
+    Always validate tokens completely:
+    
+    ```typescript
+    export async function verifyJwt(token: string): Promise<JwtPayload> {
+      // Verify signature
+      const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+      
+      // Check expiration (usually done by jwt.verify, but explicit is good)
+      if (decoded.exp && decoded.exp < Date.now() / 1000) {
+        throw new Error('Token expired');
+      }
+      
+      // Check if token is revoked
+      const isRevoked = await tokenBlacklist.has(token);
+      if (isRevoked) {
+        throw new Error('Token revoked');
+      }
+      
+      // Validate user still exists and is active
+      const user = await db.users.findOne({ id: decoded.userId });
+      if (!user || !user.isActive) {
+        throw new Error('User not found or inactive');
+      }
+      
+      return decoded;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Appropriate Status Codes">
+    Return correct HTTP status codes:
+    
+    ```typescript
+    // 401 Unauthorized: Missing or invalid credentials
+    if (!token) {
+      const error: any = new Error('Authentication required');
+      error.status = 401;
+      throw error;
+    }
+
+    // 403 Forbidden: Valid credentials but insufficient permissions
+    if (!hasRequiredScope) {
+      const error: any = new Error('Insufficient permissions');
+      error.status = 403;
+      throw error;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Log Authentication Events">
+    Track authentication for security monitoring:
+    
+    ```typescript
+    export async function expressAuthentication(
+      request: Request,
+      securityName: string,
+      scopes?: string[]
+    ): Promise<any> {
+      const ip = request.ip;
+      const userAgent = request.headers['user-agent'];
+      
+      try {
+        const user = await authenticateUser(request, securityName);
+        
+        // Log successful authentication
+        logger.info('Authentication successful', {
+          userId: user.id,
+          securityScheme: securityName,
+          ip,
+          userAgent
+        });
+        
+        return user;
+      } catch (error) {
+        // Log failed authentication
+        logger.warn('Authentication failed', {
+          securityScheme: securityName,
+          error: error.message,
+          ip,
+          userAgent
+        });
+        
+        throw error;
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Responses" icon="reply" href="/concepts/responses">
+    Handle authentication errors and responses
+  </Card>
+  <Card title="Controllers" icon="diagram-project" href="/concepts/controllers">
+    Learn more about securing controllers
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Validate authenticated requests
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/cli/overview">
+    Deploy your secured API
+  </Card>
+</CardGroup>

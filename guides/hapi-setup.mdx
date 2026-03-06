@@ -1,0 +1,505 @@
+---
+title: Hapi Setup
+description: Complete guide to setting up tsoa with Hapi.js
+---
+
+This guide walks you through integrating tsoa with a Hapi.js application, from initial setup to running your API server.
+
+## Installation
+
+<Steps>
+
+<Step title="Install Dependencies">
+
+Install tsoa along with Hapi:
+
+```bash
+npm install tsoa @hapi/hapi @hapi/boom
+npm install --save-dev @types/hapi__hapi @types/hapi__boom @types/node typescript
+```
+
+</Step>
+
+<Step title="Configure tsoa">
+
+Create a `tsoa.json` configuration file in your project root:
+
+```json tsoa.json
+{
+  "entryFile": "src/server.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "build",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "hapi"
+  }
+}
+```
+
+<Warning>The `middleware` field must be set to `"hapi"` for Hapi.js projects.</Warning>
+
+</Step>
+
+<Step title="Create a Controller">
+
+Create your first controller with tsoa decorators:
+
+```typescript src/controllers/userController.ts
+import { Controller, Get, Post, Route, Body, Path, SuccessResponse } from 'tsoa';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Retrieves a user by ID
+   * @param userId The user's identifier
+   */
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return {
+      id: userId,
+      name: 'John Doe',
+      email: 'john@example.com'
+    };
+  }
+
+  /**
+   * Creates a new user
+   */
+  @Post()
+  @SuccessResponse('201', 'Created')
+  public async createUser(@Body() requestBody: CreateUserRequest): Promise<User> {
+    this.setStatus(201);
+    return {
+      id: Math.floor(Math.random() * 10000),
+      ...requestBody
+    };
+  }
+}
+```
+
+</Step>
+
+<Step title="Set Up Hapi Server">
+
+Create your Hapi server and register tsoa routes:
+
+```typescript src/server.ts
+import Hapi from '@hapi/hapi';
+import { RegisterRoutes } from './routes';
+
+const init = async () => {
+  const server = Hapi.server({
+    port: process.env.PORT || 3000,
+    host: 'localhost',
+    routes: {
+      cors: true,
+      validate: {
+        failAction: async (request, h, err) => {
+          // Handle validation errors
+          throw err;
+        }
+      }
+    }
+  });
+
+  // Register tsoa routes
+  RegisterRoutes(server);
+
+  await server.start();
+  console.log(`Server running on ${server.info.uri}`);
+};
+
+process.on('unhandledRejection', (err) => {
+  console.log(err);
+  process.exit(1);
+});
+
+init();
+```
+
+</Step>
+
+<Step title="Generate Routes and Spec">
+
+Add scripts to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsoa spec-and-routes && tsc",
+    "start": "node build/server.js",
+    "dev": "tsoa spec-and-routes && ts-node src/server.ts"
+  }
+}
+```
+
+Generate routes and OpenAPI spec:
+
+```bash
+npm run build
+```
+
+This creates:
+- `src/routes.ts` - Generated route handlers
+- `build/swagger.json` - OpenAPI specification
+
+</Step>
+
+<Step title="Start the Server">
+
+```bash
+npm start
+```
+
+Your API is now running at `http://localhost:3000`!
+
+Test it:
+```bash
+curl http://localhost:3000/users/1
+```
+
+</Step>
+
+</Steps>
+
+## Request and Response Objects
+
+Access Hapi's request and response toolkit in your controllers:
+
+```typescript
+import { Controller, Get, Request } from 'tsoa';
+import { Request as HapiRequest, ResponseToolkit } from '@hapi/hapi';
+
+@Route('example')
+export class ExampleController extends Controller {
+  @Get('with-context')
+  public async withContext(
+    @Request() request: HapiRequest
+  ): Promise<any> {
+    // Access request headers
+    const userAgent = request.headers['user-agent'];
+    
+    // Access request info
+    const clientIp = request.info.remoteAddress;
+    
+    // Access auth credentials
+    const credentials = request.auth.credentials;
+    
+    return { userAgent, clientIp, credentials };
+  }
+}
+```
+
+## Pre-handlers (Middleware)
+
+Use Hapi's pre-handler functionality with tsoa:
+
+```typescript
+import { Controller, Get, Middlewares } from 'tsoa';
+import { Request, ResponseToolkit, RouteOptionsPreAllOptions } from '@hapi/hapi';
+import Boom from '@hapi/boom';
+
+const authPreHandler: RouteOptionsPreAllOptions = {
+  method: async (request: Request, h: ResponseToolkit) => {
+    const token = request.headers.authorization;
+    
+    if (!token) {
+      throw Boom.unauthorized('Missing authorization token');
+    }
+    
+    // Verify token and attach user to request
+    const user = await verifyToken(token);
+    request.app.user = user;
+    
+    return h.continue;
+  }
+};
+
+const loggingPreHandler: RouteOptionsPreAllOptions = {
+  method: (request: Request, h: ResponseToolkit) => {
+    console.log(`${request.method.toUpperCase()} ${request.path}`);
+    return h.continue;
+  }
+};
+
+@Route('protected')
+@Middlewares(authPreHandler)
+export class ProtectedController extends Controller {
+  @Get('data')
+  @Middlewares(loggingPreHandler)
+  public async getData(@Request() request: Request): Promise<any> {
+    return {
+      data: 'sensitive information',
+      user: request.app.user
+    };
+  }
+}
+```
+
+## Error Handling with Boom
+
+Use `@hapi/boom` for consistent error responses:
+
+```typescript
+import { Controller, Get, Path } from 'tsoa';
+import Boom from '@hapi/boom';
+
+@Route('items')
+export class ItemController extends Controller {
+  @Get('{id}')
+  public async getItem(@Path() id: number): Promise<Item> {
+    const item = await findItem(id);
+    
+    if (!item) {
+      throw Boom.notFound('Item not found');
+    }
+    
+    if (!hasPermission(item)) {
+      throw Boom.forbidden('Access denied');
+    }
+    
+    return item;
+  }
+}
+```
+
+### Common Boom Errors
+
+```typescript
+import Boom from '@hapi/boom';
+
+// 400 Bad Request
+throw Boom.badRequest('Invalid input');
+
+// 401 Unauthorized
+throw Boom.unauthorized('Invalid credentials');
+
+// 403 Forbidden
+throw Boom.forbidden('Access denied');
+
+// 404 Not Found
+throw Boom.notFound('Resource not found');
+
+// 409 Conflict
+throw Boom.conflict('Resource already exists');
+
+// 500 Internal Server Error
+throw Boom.internal('Something went wrong');
+
+// Custom status code
+throw Boom.boomify(new Error('Custom error'), { 
+  statusCode: 422,
+  message: 'Unprocessable entity' 
+});
+```
+
+## Server Configuration
+
+### CORS
+
+Enable CORS for your API:
+
+```typescript
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost',
+  routes: {
+    cors: {
+      origin: ['http://localhost:8080'],
+      credentials: true
+    }
+  }
+});
+```
+
+### Payload Size
+
+Configure maximum payload size:
+
+```typescript
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost',
+  routes: {
+    payload: {
+      maxBytes: 10485760, // 10MB
+      timeout: 30000 // 30 seconds
+    }
+  }
+});
+```
+
+### Validation
+
+Customize validation behavior:
+
+```typescript
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost',
+  routes: {
+    validate: {
+      failAction: async (request, h, err) => {
+        if (process.env.NODE_ENV === 'production') {
+          // In production, log and return generic error
+          console.error(err);
+          throw Boom.badRequest('Invalid request payload');
+        } else {
+          // In development, return detailed error
+          throw err;
+        }
+      }
+    }
+  }
+});
+```
+
+## Base Path
+
+Configure a base path for all routes:
+
+```json tsoa.json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "hapi",
+    "basePath": "/api/v1"
+  }
+}
+```
+
+## Query Parameters
+
+```typescript
+import { Controller, Get, Query } from 'tsoa';
+
+@Route('search')
+export class SearchController extends Controller {
+  @Get()
+  public async search(
+    @Query() q: string,
+    @Query() limit?: number,
+    @Query() offset?: number
+  ): Promise<SearchResult[]> {
+    return performSearch(q, limit || 10, offset || 0);
+  }
+}
+```
+
+## Headers
+
+```typescript
+import { Controller, Get, Header, Request } from 'tsoa';
+import { Request as HapiRequest, ResponseToolkit } from '@hapi/hapi';
+
+@Route('api')
+export class ApiController extends Controller {
+  @Get('version')
+  public async getVersion(
+    @Header('x-api-version') apiVersion?: string,
+    @Request() request: HapiRequest
+  ): Promise<any> {
+    return { 
+      requestedVersion: apiVersion,
+      serverVersion: '1.0.0'
+    };
+  }
+}
+```
+
+## Response Toolkit
+
+While tsoa handles most response scenarios, you can access the response toolkit for advanced use cases:
+
+```typescript
+import { Controller, Get } from 'tsoa';
+
+@Route('download')
+export class DownloadController extends Controller {
+  @Get('file')
+  public async downloadFile(): Promise<any> {
+    // For file downloads, you might want to use
+    // Hapi's file handler directly in a custom route
+    return {
+      filename: 'example.pdf',
+      contentType: 'application/pdf'
+    };
+  }
+}
+```
+
+## Lifecycle Events
+
+Hapi has a rich lifecycle with extension points:
+
+```typescript
+// Log all requests
+server.ext('onRequest', (request, h) => {
+  console.log(`Request: ${request.method.toUpperCase()} ${request.path}`);
+  return h.continue;
+});
+
+// Log all responses
+server.ext('onPreResponse', (request, h) => {
+  const response = request.response as any;
+  if (response.isBoom) {
+    console.error(`Error: ${response.output.statusCode}`);
+  }
+  return h.continue;
+});
+```
+
+## Plugins
+
+Register Hapi plugins with your server:
+
+```typescript
+import Hapi from '@hapi/hapi';
+import Inert from '@hapi/inert';
+import Vision from '@hapi/vision';
+
+const init = async () => {
+  const server = Hapi.server({ port: 3000 });
+  
+  // Register plugins
+  await server.register([
+    Inert,
+    Vision
+  ]);
+  
+  RegisterRoutes(server);
+  
+  await server.start();
+};
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Learn how to handle file uploads with Hapi
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Use Hapi's auth strategies with tsoa
+  </Card>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Implement request validation
+  </Card>
+  <Card title="Dependency Injection" icon="plug" href="/guides/dependency-injection">
+    Use IoC containers with your controllers
+  </Card>
+</CardGroup>

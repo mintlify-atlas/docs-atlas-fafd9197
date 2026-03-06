@@ -1,0 +1,235 @@
+---
+title: Installation
+description: Install tsoa and set up your project to build OpenAPI-compliant REST APIs with TypeScript
+---
+
+tsoa is a framework that uses TypeScript decorators to generate OpenAPI specifications and runtime route configurations from your TypeScript controllers and models.
+
+## Prerequisites
+
+Before installing tsoa, ensure your development environment meets these requirements:
+
+<CardGroup cols={2}>
+  <Card title="Node.js" icon="node">
+    Node.js version 18.0.0 or higher
+  </Card>
+  <Card title="TypeScript" icon="code">
+    TypeScript 5.2.2 or higher
+  </Card>
+</CardGroup>
+
+<Note>
+  tsoa requires `experimentalDecorators` and `emitDecoratorMetadata` to be enabled in your TypeScript configuration.
+</Note>
+
+## Package Installation
+
+tsoa is available as npm packages. You can install it using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install tsoa @tsoa/runtime
+npm install --save-dev @tsoa/cli
+```
+
+```bash yarn
+yarn add tsoa @tsoa/runtime
+yarn add --dev @tsoa/cli
+```
+
+```bash pnpm
+pnpm add tsoa @tsoa/runtime
+pnpm add -D @tsoa/cli
+```
+
+</CodeGroup>
+
+### Package Breakdown
+
+tsoa consists of multiple packages that work together:
+
+- **`@tsoa/cli`** - Command-line tools for generating OpenAPI specs and routes
+- **`@tsoa/runtime`** - Runtime decorators and utilities used in your application code
+- **`tsoa`** - Meta-package that includes both CLI and runtime (alternative installation option)
+
+<Tip>
+  You can install the `tsoa` meta-package instead of `@tsoa/cli` and `@tsoa/runtime` separately:
+  
+  ```bash
+  npm install tsoa
+  ```
+</Tip>
+
+## TypeScript Configuration
+
+Configure your `tsconfig.json` to enable decorators and emit decorator metadata:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2018",
+    "module": "commonjs",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}
+```
+
+<Warning>
+  The `experimentalDecorators` and `emitDecoratorMetadata` options are **required** for tsoa decorators to work correctly.
+</Warning>
+
+## Project Structure Setup
+
+Create a recommended directory structure for your tsoa project:
+
+```bash
+mkdir -p src/controllers src/models
+touch tsoa.json
+```
+
+Your project structure should look like:
+
+```
+my-tsoa-app/
+├── src/
+│   ├── controllers/
+│   │   └── userController.ts
+│   ├── models/
+│   │   └── user.ts
+│   └── server.ts
+├── tsoa.json
+├── tsconfig.json
+└── package.json
+```
+
+## tsoa Configuration
+
+Create a `tsoa.json` file in your project root to configure code generation:
+
+```json tsoa.json
+{
+  "entryFile": "src/server.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "./dist",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "./src",
+    "middleware": "express"
+  }
+}
+```
+
+### Configuration Options
+
+<ResponseField name="entryFile" type="string" required>
+  Entry point of your application. tsoa uses this to find your controllers.
+</ResponseField>
+
+<ResponseField name="spec" type="object" required>
+  Configuration for OpenAPI specification generation:
+  - `outputDirectory`: Where to save the generated spec
+  - `specVersion`: OpenAPI version (2 or 3)
+</ResponseField>
+
+<ResponseField name="routes" type="object" required>
+  Configuration for route generation:
+  - `routesDir`: Where to generate route files
+  - `middleware`: Framework choice (`express`, `koa`, or `hapi`)
+</ResponseField>
+
+## Framework-Specific Installation
+
+Depending on your chosen web framework, install the appropriate dependencies:
+
+<Tabs>
+  <Tab title="Express">
+    ```bash
+    npm install express
+    npm install --save-dev @types/express
+    ```
+    
+    Set `middleware` to `"express"` in `tsoa.json`.
+  </Tab>
+  
+  <Tab title="Koa">
+    ```bash
+    npm install koa @koa/router
+    npm install --save-dev @types/koa @types/koa__router
+    ```
+    
+    Set `middleware` to `"koa"` in `tsoa.json`.
+  </Tab>
+  
+  <Tab title="Hapi">
+    ```bash
+    npm install @hapi/hapi
+    ```
+    
+    Set `middleware` to `"hapi"` in `tsoa.json`.
+  </Tab>
+</Tabs>
+
+## Build Scripts
+
+Add tsoa generation commands to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsoa spec-and-routes && tsc",
+    "dev": "tsoa spec-and-routes && nodemon src/server.ts",
+    "tsoa:spec": "tsoa spec",
+    "tsoa:routes": "tsoa routes",
+    "tsoa:spec-and-routes": "tsoa spec-and-routes"
+  }
+}
+```
+
+### Available Commands
+
+<AccordionGroup>
+  <Accordion title="tsoa spec">
+    Generates only the OpenAPI specification file.
+  </Accordion>
+  
+  <Accordion title="tsoa routes">
+    Generates only the route registration files.
+  </Accordion>
+  
+  <Accordion title="tsoa spec-and-routes">
+    Generates both spec and routes in a single command (recommended).
+  </Accordion>
+</AccordionGroup>
+
+## Verification
+
+Verify your installation by running:
+
+```bash
+npx tsoa --help
+```
+
+You should see the tsoa CLI help output listing available commands.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Build your first API with tsoa
+  </Card>
+  <Card title="Controllers" icon="code" href="/concepts/controllers">
+    Learn about controller decorators
+  </Card>
+</CardGroup>

@@ -1,0 +1,518 @@
+---
+title: "Config"
+description: "Main tsoa configuration interface"
+---
+
+## Overview
+
+The `Config` interface defines the top-level configuration for tsoa. It combines OpenAPI specification generation settings with route generation settings, along with global options that apply to both.
+
+## Configuration File
+
+Create a `tsoa.json` file in your project root:
+
+```json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "controllerPathGlobs": ["src/controllers/**/*.ts"],
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+## Properties
+
+### entryFile
+
+<ParamField path="entryFile" type="string" required>
+  The entry point to your API application.
+  
+  This file should import or reference all of your controllers, either directly or indirectly.
+</ParamField>
+
+```json
+{
+  "entryFile": "src/server.ts"
+}
+```
+
+### spec
+
+<ParamField path="spec" type="SpecConfig" required>
+  OpenAPI specification generation configuration.
+  
+  See [SpecConfig](/api/interfaces/spec-config) for detailed options.
+</ParamField>
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "name": "My API",
+    "version": "1.0.0"
+  }
+}
+```
+
+### routes
+
+<ParamField path="routes" type="RoutesConfig" required>
+  Route generation configuration.
+  
+  See [RoutesConfig](/api/interfaces/routes-config) for detailed options.
+</ParamField>
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "basePath": "/api"
+  }
+}
+```
+
+### controllerPathGlobs
+
+<ParamField path="controllerPathGlobs" type="string[]" optional>
+  Array of glob patterns pointing to your controller files.
+  
+  If not specified, tsoa will scan files imported from `entryFile`.
+</ParamField>
+
+```json
+{
+  "controllerPathGlobs": [
+    "src/controllers/**/*.ts",
+    "src/modules/**/controllers/*.ts"
+  ]
+}
+```
+
+### ignore
+
+<ParamField path="ignore" type="string[]" optional>
+  Directories to ignore during TypeScript metadata scan.
+  
+  Useful for excluding test files, build output, and node_modules.
+</ParamField>
+
+```json
+{
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
+```
+
+### noImplicitAdditionalProperties
+
+<ParamField path="noImplicitAdditionalProperties" type="'throw-on-extras' | 'silently-remove-extras' | 'ignore'" optional>
+  Controls how additional properties in request bodies are handled.
+  
+  - `'throw-on-extras'`: Reject requests with extra properties (recommended)
+  - `'silently-remove-extras'`: Remove extra properties without error
+  - `'ignore'`: Allow extra properties (not recommended for security)
+</ParamField>
+
+```json
+{
+  "noImplicitAdditionalProperties": "throw-on-extras"
+}
+```
+
+**Example behavior:**
+
+```typescript
+interface CreateUserRequest {
+  username: string;
+  email: string;
+}
+
+@Post('users')
+public async createUser(@Body() body: CreateUserRequest): Promise<User> {
+  return await userService.create(body);
+}
+
+// Request body:
+{
+  "username": "john",
+  "email": "john@example.com",
+  "isAdmin": true  // Extra property
+}
+
+// With 'throw-on-extras': Returns 422 validation error
+// With 'silently-remove-extras': Creates user without isAdmin
+// With 'ignore': Creates user, isAdmin is available in body
+```
+
+### compilerOptions
+
+<ParamField path="compilerOptions" type="Record<string, unknown>" optional>
+  TypeScript compiler options to use during generation.
+  
+  Overrides options from `tsconfig.json`.
+</ParamField>
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictNullChecks": true
+  }
+}
+```
+
+### defaultNumberType
+
+<ParamField path="defaultNumberType" type="'double' | 'float' | 'integer' | 'long'" optional default="double">
+  Default OpenAPI number type for TypeScript's `number` type when no type annotation is present.
+</ParamField>
+
+```json
+{
+  "defaultNumberType": "integer"
+}
+```
+
+**Usage:**
+
+```typescript
+// Without annotation
+@Get('count')
+public async getCount(): Promise<number> {
+  // OpenAPI type: integer (if defaultNumberType is 'integer')
+  return 42;
+}
+
+// With annotation
+/**
+ * @isFloat
+ */
+@Get('average')
+public async getAverage(): Promise<number> {
+  // OpenAPI type: float (annotation overrides default)
+  return 42.5;
+}
+```
+
+### multerOpts
+
+<ParamField path="multerOpts" type="MulterOpts" optional deprecated>
+  Multer options for file upload handling.
+  
+  **Deprecated:** Since v6.4.0. Pass multer options directly to `RegisterRoutes` instead.
+</ParamField>
+
+```json
+{
+  "multerOpts": {
+    "dest": "/tmp/uploads"
+  }
+}
+```
+
+**Modern approach (recommended):**
+
+```typescript
+import express from 'express';
+import multer from 'multer';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+
+const multerOpts = {
+  dest: '/tmp/uploads',
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB
+  }
+};
+
+// Pass multer options to RegisterRoutes
+RegisterRoutes(app, { multerOpts });
+```
+
+## Complete Example
+
+### Minimal Configuration
+
+```json
+{
+  "entryFile": "src/app.ts",
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+### Production Configuration
+
+```json
+{
+  "entryFile": "src/server.ts",
+  "controllerPathGlobs": [
+    "src/controllers/**/*.ts",
+    "src/modules/**/controllers/*.ts"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/mocks/**"
+  ],
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "defaultNumberType": "double",
+  "spec": {
+    "outputDirectory": "public/api-docs",
+    "specFileBaseName": "openapi",
+    "specVersion": 3,
+    "yaml": true,
+    "name": "E-Commerce API",
+    "version": "2.0.0",
+    "description": "RESTful API for e-commerce platform",
+    "license": "MIT",
+    "contact": {
+      "name": "API Support",
+      "email": "api@example.com",
+      "url": "https://example.com/support"
+    },
+    "host": "api.example.com",
+    "basePath": "/v2",
+    "schemes": ["https"],
+    "securityDefinitions": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      }
+    },
+    "rootSecurity": [
+      { "bearer": [] }
+    ],
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management operations"
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog management"
+      },
+      {
+        "name": "Orders",
+        "description": "Order processing and management"
+      }
+    ]
+  },
+  "routes": {
+    "routesDir": "src/generated",
+    "routesFileName": "routes.ts",
+    "middleware": "express",
+    "basePath": "/api/v2",
+    "authenticationModule": "./src/authentication",
+    "iocModule": "./src/inversify.config",
+    "esm": false,
+    "noWriteIfUnchanged": true,
+    "bodyCoercion": true
+  }
+}
+```
+
+### Monorepo Configuration
+
+```json
+{
+  "entryFile": "packages/api/src/server.ts",
+  "controllerPathGlobs": [
+    "packages/api/src/controllers/**/*.ts",
+    "packages/shared/src/controllers/**/*.ts"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/*.test.ts"
+  ],
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "packages/api/dist",
+    "specVersion": 3,
+    "name": "Monorepo API",
+    "version": "1.0.0"
+  },
+  "routes": {
+    "routesDir": "packages/api/src/generated",
+    "middleware": "express",
+    "basePath": "/api"
+  }
+}
+```
+
+## TypeScript Configuration
+
+You can also define configuration in TypeScript:
+
+### tsoa.config.ts
+
+```typescript
+import { Config } from 'tsoa';
+
+const config: Config = {
+  entryFile: './src/server.ts',
+  controllerPathGlobs: ['./src/controllers/**/*.ts'],
+  noImplicitAdditionalProperties: 'throw-on-extras',
+  
+  spec: {
+    outputDirectory: './dist',
+    specVersion: 3,
+    name: 'My API',
+    version: process.env.API_VERSION || '1.0.0',
+    description: 'API Documentation',
+    host: process.env.API_HOST || 'localhost:3000',
+    basePath: '/api',
+    schemes: process.env.NODE_ENV === 'production' ? ['https'] : ['http'],
+    securityDefinitions: {
+      bearer: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT'
+      }
+    }
+  },
+  
+  routes: {
+    routesDir: './src',
+    middleware: 'express',
+    basePath: '/api',
+    authenticationModule: './src/authentication'
+  }
+};
+
+export const specConfig = config.spec;
+export const routesConfig = config.routes;
+export default config;
+```
+
+### Usage
+
+```typescript
+import { generateSpec, generateRoutes } from 'tsoa';
+import config from './tsoa.config';
+
+(async () => {
+  const metadata = await generateSpec(config.spec);
+  await generateRoutes(config.routes, undefined, undefined, metadata);
+})();
+```
+
+## Loading Configuration
+
+The tsoa CLI automatically loads configuration from:
+
+1. Command line argument: `-c ./custom-config.json`
+2. `tsoa.json` in the current directory
+3. `tsoa` field in `package.json`
+
+### package.json
+
+```json
+{
+  "name": "my-api",
+  "version": "1.0.0",
+  "tsoa": {
+    "entryFile": "src/app.ts",
+    "spec": {
+      "outputDirectory": "dist",
+      "specVersion": 3
+    },
+    "routes": {
+      "routesDir": "src",
+      "middleware": "express"
+    }
+  }
+}
+```
+
+## Environment-Specific Configuration
+
+```typescript
+// config/tsoa.development.ts
+import { Config } from 'tsoa';
+
+const config: Config = {
+  entryFile: './src/server.ts',
+  spec: {
+    outputDirectory: './dist',
+    specVersion: 3,
+    host: 'localhost:3000',
+    schemes: ['http']
+  },
+  routes: {
+    routesDir: './src',
+    middleware: 'express'
+  }
+};
+
+export default config;
+
+// config/tsoa.production.ts
+import { Config } from 'tsoa';
+
+const config: Config = {
+  entryFile: './src/server.ts',
+  spec: {
+    outputDirectory: './dist',
+    specVersion: 3,
+    host: 'api.example.com',
+    schemes: ['https']
+  },
+  routes: {
+    routesDir: './src',
+    middleware: 'express'
+  }
+};
+
+export default config;
+
+// Load based on environment
+import devConfig from './config/tsoa.development';
+import prodConfig from './config/tsoa.production';
+
+const config = process.env.NODE_ENV === 'production' ? prodConfig : devConfig;
+```
+
+## See Also
+
+- [SpecConfig Interface](/api/interfaces/spec-config)
+- [RoutesConfig Interface](/api/interfaces/routes-config)
+- [generateSpec Function](/api/functions/generate-spec)
+- [generateRoutes Function](/api/functions/generate-routes)

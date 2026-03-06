@@ -1,0 +1,686 @@
+---
+title: OpenAPI Versions
+description: Understanding and configuring OpenAPI specification versions in tsoa
+---
+
+tsoa supports multiple OpenAPI (formerly Swagger) specification versions. Understanding the differences and how to configure them is important for API documentation and client generation.
+
+## Supported Versions
+
+tsoa supports three major OpenAPI versions:
+
+- **OpenAPI 3.1** (Latest) - Released 2021, JSON Schema compatible
+- **OpenAPI 3.0** - Released 2017, widely adopted
+- **OpenAPI 2.0** (Swagger) - Original specification, deprecated but still supported
+
+## Configuring Spec Version
+
+Set the OpenAPI version in your `tsoa.json`:
+
+<Tabs>
+  <Tab title="OpenAPI 3.1">
+    ```json tsoa.json
+    {
+      "spec": {
+        "outputDirectory": "./build",
+        "specVersion": 3.1
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="OpenAPI 3.0">
+    ```json tsoa.json
+    {
+      "spec": {
+        "outputDirectory": "./build",
+        "specVersion": 3
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Swagger 2.0">
+    ```json tsoa.json
+    {
+      "spec": {
+        "outputDirectory": "./build",
+        "specVersion": 2
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Version Comparison
+
+### OpenAPI 3.1 vs 3.0
+
+<CodeGroup>
+
+```yaml OpenAPI 3.1
+openapi: 3.1.0
+info:
+  title: My API
+  version: 1.0.0
+  
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: [string, "null"]  # Nullable in 3.1
+      required:
+        - id
+        - name
+```
+
+```yaml OpenAPI 3.0
+openapi: 3.0.3
+info:
+  title: My API
+  version: 1.0.0
+  
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true  # Nullable in 3.0
+      required:
+        - id
+        - name
+```
+
+</CodeGroup>
+
+### Key Differences
+
+| Feature | OpenAPI 3.1 | OpenAPI 3.0 | Swagger 2.0 |
+|---------|-------------|-------------|-------------|
+| JSON Schema | Full compatibility | Partial | Extended subset |
+| Nullable | `type: [string, "null"]` | `nullable: true` | `x-nullable: true` |
+| Examples | `examples` | `example` | `example` |
+| Webhooks | ✅ Supported | ❌ Not supported | ❌ Not supported |
+| `const` | ✅ Supported | ❌ Not supported | ❌ Not supported |
+| `$schema` | ✅ Allowed | ❌ Not allowed | ❌ Not allowed |
+
+## OpenAPI 3.1 Features
+
+### Full JSON Schema Support
+
+OpenAPI 3.1 is fully compatible with JSON Schema 2020-12:
+
+```typescript
+interface User {
+  id: number;
+  /**
+   * User's email address
+   * @format email
+   * @pattern ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+   */
+  email: string;
+  
+  /**
+   * User's age
+   * @minimum 18
+   * @maximum 120
+   */
+  age: number;
+  
+  /**
+   * User's role
+   * @default "user"
+   */
+  role: 'admin' | 'user' | 'guest';
+}
+```
+
+### Nullable Types
+
+In OpenAPI 3.1, use union types for nullable:
+
+```typescript
+interface Product {
+  id: number;
+  name: string;
+  description: string | null;  // Can be string or null
+  price?: number;              // Optional (can be undefined)
+}
+```
+
+Generated spec:
+
+```yaml
+Product:
+  type: object
+  properties:
+    id:
+      type: integer
+    name:
+      type: string
+    description:
+      type:
+        - string
+        - "null"
+    price:
+      type: number
+  required:
+    - id
+    - name
+    - description
+```
+
+### Const Values
+
+```typescript
+interface Config {
+  /**
+   * @const "v1"
+   */
+  version: string;
+  
+  /**
+   * @const 443
+   */
+  port: number;
+}
+```
+
+## OpenAPI 3.0 Features
+
+### Request Bodies
+
+Explicit request body objects:
+
+```typescript
+import { Controller, Post, Route, Body } from 'tsoa';
+
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Create a new user
+   * @param requestBody User creation data
+   */
+  @Post()
+  public async createUser(
+    @Body() requestBody: CreateUserRequest
+  ): Promise<User> {
+    return createUser(requestBody);
+  }
+}
+```
+
+Generated spec:
+
+```yaml
+paths:
+  /users:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+```
+
+### Multiple Response Types
+
+```typescript
+import { Controller, Get, Route, Response } from 'tsoa';
+
+interface ErrorResponse {
+  message: string;
+  code: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Get user by ID
+   */
+  @Get('{id}')
+  @Response<ErrorResponse>(404, 'Not Found')
+  @Response<ErrorResponse>(500, 'Internal Server Error')
+  public async getUser(id: number): Promise<User> {
+    return getUser(id);
+  }
+}
+```
+
+### Security Schemes
+
+```json tsoa.json
+{
+  "spec": {
+    "securityDefinitions": {
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://example.com/oauth/authorize",
+            "tokenUrl": "https://example.com/oauth/token",
+            "scopes": {
+              "read:users": "Read user data",
+              "write:users": "Modify user data"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Swagger 2.0 Support
+
+While deprecated, Swagger 2.0 is still supported for legacy systems:
+
+```json tsoa.json
+{
+  "spec": {
+    "outputDirectory": "./build",
+    "specVersion": 2,
+    "host": "api.example.com",
+    "basePath": "/v1",
+    "schemes": ["https"],
+    "securityDefinitions": {
+      "api_key": {
+        "type": "apiKey",
+        "name": "api_key",
+        "in": "header"
+      }
+    }
+  }
+}
+```
+
+### Swagger 2.0 Limitations
+
+<Warning>
+Swagger 2.0 has several limitations:
+- No `oneOf`, `anyOf`, or `allOf` support
+- Limited nullable type support
+- No cookie parameters
+- No request body `content` types
+- No callback support
+</Warning>
+
+## Migrating Between Versions
+
+### From 2.0 to 3.0
+
+<Steps>
+
+<Step title="Update Configuration">
+
+```json
+{
+  "spec": {
+    "specVersion": 3  // Changed from 2
+  }
+}
+```
+
+</Step>
+
+<Step title="Update Security Definitions">
+
+```json
+// Before (Swagger 2.0)
+{
+  "securityDefinitions": {
+    "Bearer": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header"
+    }
+  }
+}
+
+// After (OpenAPI 3.0)
+{
+  "securityDefinitions": {
+    "Bearer": {
+      "type": "http",
+      "scheme": "bearer",
+      "bearerFormat": "JWT"
+    }
+  }
+}
+```
+
+</Step>
+
+<Step title="Update File Uploads">
+
+File upload parameters change in 3.0:
+
+```typescript
+// Works in both versions
+@Post('upload')
+public async upload(
+  @UploadedFile() file: Express.Multer.File
+): Promise<any> {
+  return { filename: file.originalname };
+}
+```
+
+</Step>
+
+</Steps>
+
+### From 3.0 to 3.1
+
+<Steps>
+
+<Step title="Update Version">
+
+```json tsoa.json
+{
+  "spec": {
+    "specVersion": 3.1  // Changed from 3
+  }
+}
+```
+
+</Step>
+
+<Step title="Update Nullable Types">
+
+```typescript
+// Before (3.0 style)
+interface User {
+  /**
+   * @nullable
+   */
+  email: string;
+}
+
+// After (3.1 style)
+interface User {
+  email: string | null;
+}
+```
+
+</Step>
+
+<Step title="Regenerate Spec">
+
+```bash
+npm run tsoa spec
+```
+
+</Step>
+
+</Steps>
+
+## Spec Customization
+
+### Basic Information
+
+```json tsoa.json
+{
+  "spec": {
+    "outputDirectory": "./build",
+    "specVersion": 3.1,
+    "name": "My API",
+    "version": "1.0.0",
+    "description": "API for managing users and products",
+    "license": "MIT",
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com",
+      "url": "https://example.com/support"
+    }
+  }
+}
+```
+
+### Servers
+
+Define multiple server environments:
+
+```json tsoa.json
+{
+  "spec": {
+    "servers": [
+      {
+        "url": "https://api.example.com/v1",
+        "description": "Production server"
+      },
+      {
+        "url": "https://staging-api.example.com/v1",
+        "description": "Staging server"
+      },
+      {
+        "url": "http://localhost:3000/v1",
+        "description": "Development server"
+      }
+    ]
+  }
+}
+```
+
+### Tags
+
+Organize endpoints by tags:
+
+```json tsoa.json
+{
+  "spec": {
+    "tags": [
+      {
+        "name": "Users",
+        "description": "User management endpoints"
+      },
+      {
+        "name": "Products",
+        "description": "Product catalog endpoints"
+      }
+    ]
+  }
+}
+```
+
+### External Documentation
+
+```json tsoa.json
+{
+  "spec": {
+    "externalDocs": {
+      "description": "Full API Documentation",
+      "url": "https://docs.example.com"
+    }
+  }
+}
+```
+
+## Output Formats
+
+Generate both JSON and YAML:
+
+```json tsoa.json
+{
+  "spec": {
+    "outputDirectory": "./build",
+    "specVersion": 3.1,
+    "yaml": true  // Generate YAML in addition to JSON
+  }
+}
+```
+
+This creates both:
+- `build/swagger.json`
+- `build/swagger.yaml`
+
+## Viewing Specifications
+
+### Swagger UI
+
+Serve your spec with Swagger UI:
+
+```typescript
+import express from 'express';
+import swaggerUi from 'swagger-ui-express';
+import * as swaggerDocument from './build/swagger.json';
+
+const app = express();
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+app.listen(3000);
+```
+
+Access at `http://localhost:3000/api-docs`
+
+### Redoc
+
+Use Redoc for a cleaner documentation UI:
+
+```typescript
+import express from 'express';
+import { redoc } from 'redoc-express';
+
+const app = express();
+
+app.get('/docs', redoc({
+  title: 'API Documentation',
+  specUrl: '/swagger.json'
+}));
+
+app.get('/swagger.json', (req, res) => {
+  res.json(require('./build/swagger.json'));
+});
+
+app.listen(3000);
+```
+
+## Client Generation
+
+Use your OpenAPI spec to generate clients:
+
+### OpenAPI Generator
+
+```bash
+# Install
+npm install -g @openapitools/openapi-generator-cli
+
+# Generate TypeScript client
+openapi-generator-cli generate \
+  -i build/swagger.json \
+  -g typescript-axios \
+  -o client/
+
+# Generate Python client
+openapi-generator-cli generate \
+  -i build/swagger.json \
+  -g python \
+  -o client-python/
+```
+
+### Swagger Codegen
+
+```bash
+npx @apidevtools/swagger-cli bundle build/swagger.json \
+  --outfile build/swagger-bundled.json \
+  --type json
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Latest Stable Version">
+    Use OpenAPI 3.0 or 3.1 for new projects. Only use Swagger 2.0 if required for legacy tooling.
+  </Accordion>
+  
+  <Accordion title="Version Your API">
+    Include version in URL or headers, and maintain separate specs for each major version.
+  </Accordion>
+  
+  <Accordion title="Document Everything">
+    Use JSDoc comments for descriptions, examples, and constraints.
+  </Accordion>
+  
+  <Accordion title="Validate Specifications">
+    Use tools like Spectral or swagger-cli to validate your spec:
+    ```bash
+    npx @stoplight/spectral-cli lint build/swagger.json
+    ```
+  </Accordion>
+  
+  <Accordion title="Version Control Specs">
+    Commit generated specs to track API changes over time.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Spec Generation Fails
+
+1. Check TypeScript compilation
+2. Verify tsoa configuration
+3. Check for syntax errors in decorators
+
+### Invalid Spec
+
+Validate your spec:
+
+```bash
+npx swagger-cli validate build/swagger.json
+```
+
+### Missing Types
+
+Ensure all referenced types are exported:
+
+```typescript
+// Export all types used in controllers
+export interface User { ... }
+export interface CreateUserRequest { ... }
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Templates" icon="paintbrush" href="/guides/custom-templates">
+    Customize route generation templates
+  </Card>
+  <Card title="API Documentation" icon="book" href="/cli/overview">
+    Learn about API documentation
+  </Card>
+</CardGroup>

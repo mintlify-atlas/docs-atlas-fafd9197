@@ -1,0 +1,676 @@
+---
+title: Configuration
+description: Complete guide to configuring tsoa through tsoa.json, tsoa.yaml, or tsoa.js
+---
+
+tsoa is configured through a configuration file that defines how specifications and routes are generated. The configuration file can be in JSON, YAML, or JavaScript format.
+
+## Configuration File
+
+By default, tsoa looks for `tsoa.json` in your project root. You can use alternative formats or locations:
+
+<CodeGroup>
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+```yaml tsoa.yaml
+entryFile: src/app.ts
+noImplicitAdditionalProperties: throw-on-extras
+spec:
+  outputDirectory: dist
+  specVersion: 3
+routes:
+  routesDir: src
+  middleware: express
+```
+
+```javascript tsoa.js
+module.exports = {
+  entryFile: 'src/app.ts',
+  noImplicitAdditionalProperties: 'throw-on-extras',
+  spec: {
+    outputDirectory: 'dist',
+    specVersion: 3
+  },
+  routes: {
+    routesDir: 'src',
+    middleware: 'express'
+  }
+};
+```
+
+</CodeGroup>
+
+<Tip>
+  Use JavaScript format (`tsoa.js`) when you need dynamic configuration or want to compute values at runtime.
+</Tip>
+
+## Configuration Structure
+
+The configuration file has four main sections:
+
+```typescript
+interface Config {
+  entryFile: string;                    // Entry point to your API
+  spec: SpecConfig;                     // OpenAPI spec generation
+  routes: RoutesConfig;                 // Route handler generation
+  // Optional settings
+  controllerPathGlobs?: string[];       // Alternative to entryFile
+  noImplicitAdditionalProperties?: string;
+  compilerOptions?: Record<string, unknown>;
+  ignore?: string[];
+  multerOpts?: MulterOptions;
+  defaultNumberType?: string;
+}
+```
+
+## Entry Point Configuration
+
+You must specify how tsoa finds your controllers using **either** `entryFile` or `controllerPathGlobs`:
+
+### Using entryFile
+
+Points to a file that imports all your controllers:
+
+```json
+{
+  "entryFile": "src/app.ts"
+}
+```
+
+```typescript src/app.ts
+import './controllers/usersController';
+import './controllers/productsController';
+import './controllers/ordersController';
+// tsoa will scan all imported controllers
+```
+
+<Note>
+  The entry file doesn't need to contain any tsoa-specific code. It just needs to import your controllers directly or indirectly.
+</Note>
+
+### Using controllerPathGlobs
+
+Use glob patterns to directly specify controller files:
+
+```json
+{
+  "controllerPathGlobs": [
+    "src/controllers/**/*Controller.ts",
+    "src/modules/**/controllers/*.ts"
+  ]
+}
+```
+
+<CardGroup cols={2}>
+
+<Card title="entryFile" icon="file">
+  **Pros:**
+  - Single source of truth
+  - Respects your imports
+  - Works with any structure
+  
+  **Cons:**
+  - Must import all controllers
+  - Slower for large projects
+</Card>
+
+<Card title="controllerPathGlobs" icon="folder-tree">
+  **Pros:**
+  - Faster generation
+  - No import required
+  - Explicit file selection
+  
+  **Cons:**
+  - Must maintain glob patterns
+  - Could pick up unwanted files
+</Card>
+
+</CardGroup>
+
+## Global Options
+
+### noImplicitAdditionalProperties
+
+Controls how tsoa handles extra properties in request bodies:
+
+<ParamField path="noImplicitAdditionalProperties" type="enum">
+  <Expandable title="values">
+    - `"ignore"` - Allow extra properties (default)
+    - `"silently-remove-extras"` - Remove extra properties without error
+    - `"throw-on-extras"` - Reject requests with extra properties
+  </Expandable>
+  
+  ```json
+  {
+    "noImplicitAdditionalProperties": "throw-on-extras"
+  }
+  ```
+</ParamField>
+
+<CodeGroup>
+
+```typescript Controller
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@Post('users')
+public async createUser(@Body() body: CreateUserRequest) {
+  // ...
+}
+```
+
+```json Request (ignore)
+// With "ignore": succeeds, extra field passed through
+{
+  "name": "John",
+  "email": "john@example.com",
+  "extraField": "ignored but present"
+}
+```
+
+```json Request (silently-remove-extras)
+// With "silently-remove-extras": succeeds, extra field removed
+{
+  "name": "John",
+  "email": "john@example.com",
+  "extraField": "will be removed"
+}
+// Controller receives: { name: "John", email: "john@example.com" }
+```
+
+```json Request (throw-on-extras)
+// With "throw-on-extras": fails with validation error
+{
+  "name": "John",
+  "email": "john@example.com",
+  "extraField": "causes error"
+}
+// Returns 400: "\"extraField\" is an excess property"
+```
+
+</CodeGroup>
+
+<Warning>
+  Using `"throw-on-extras"` provides the strictest validation but may break clients sending additional fields. Start with `"silently-remove-extras"` for a safer migration path.
+</Warning>
+
+### ignore
+
+Directories to ignore when scanning TypeScript files:
+
+```json
+{
+  "ignore": [
+    "**/node_modules/**",
+    "**/test/**",
+    "**/dist/**"
+  ]
+}
+```
+
+<Tip>
+  Ignoring unnecessary directories significantly improves generation speed for large projects.
+</Tip>
+
+### compilerOptions
+
+Override TypeScript compiler options during generation:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+<Note>
+  These options are merged with your `tsconfig.json`. Use this when generation needs different settings than your build.
+</Note>
+
+### defaultNumberType
+
+How TypeScript `number` type maps to OpenAPI:
+
+```json
+{
+  "defaultNumberType": "double"
+}
+```
+
+<ParamField path="defaultNumberType" type="enum" default="double">
+  - `"double"` - 64-bit floating point
+  - `"float"` - 32-bit floating point
+  - `"integer"` - 32-bit integer
+  - `"long"` - 64-bit integer
+</ParamField>
+
+```typescript
+interface Product {
+  price: number;        // Uses defaultNumberType
+  quantity: number;     // Uses defaultNumberType
+  
+  // Override with JSDoc tags:
+  /** @isInt */
+  stock: number;        // Always integer
+  
+  /** @isFloat */
+  rating: number;       // Always float
+}
+```
+
+## Spec Configuration
+
+Controls OpenAPI specification generation:
+
+```json
+{
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "specFileBaseName": "swagger",
+    "host": "api.example.com",
+    "basePath": "/v1",
+    "schemes": ["https"],
+    "yaml": true
+  }
+}
+```
+
+### Required Options
+
+<ParamField path="spec.outputDirectory" type="string" required>
+  Directory where the OpenAPI spec file will be written.
+  
+  ```json
+  { "spec": { "outputDirectory": "dist/docs" } }
+  ```
+</ParamField>
+
+### Version and Format
+
+<ParamField path="spec.specVersion" type="number" default={2}>
+  OpenAPI version to generate: `2`, `3`, or `3.1`
+  
+  ```json
+  { "spec": { "specVersion": 3 } }
+  ```
+</ParamField>
+
+<ParamField path="spec.yaml" type="boolean" default={false}>
+  Output in YAML format instead of JSON.
+  
+  ```json
+  { "spec": { "yaml": true } }
+  ```
+</ParamField>
+
+<ParamField path="spec.specFileBaseName" type="string" default="swagger">
+  Base name of the output file (without extension).
+  
+  ```json
+  { "spec": { "specFileBaseName": "openapi" } }
+  ```
+  
+  Generates `openapi.json` or `openapi.yaml`
+</ParamField>
+
+### API Information
+
+By default, tsoa extracts these from `package.json`:
+
+<ParamField path="spec.name" type="string">
+  API name (defaults to package.json `name`)
+</ParamField>
+
+<ParamField path="spec.version" type="string">
+  API version (defaults to package.json `version`)
+</ParamField>
+
+<ParamField path="spec.description" type="string">
+  API description (defaults to package.json `description`)
+</ParamField>
+
+<ParamField path="spec.license" type="string">
+  API license (defaults to package.json `license`)
+</ParamField>
+
+```json
+{
+  "spec": {
+    "name": "My API",
+    "version": "2.0.0",
+    "description": "A comprehensive API for...",
+    "license": "MIT"
+  }
+}
+```
+
+### Server Configuration
+
+<Tabs>
+  <Tab title="OpenAPI 2.0">
+    ```json
+    {
+      "spec": {
+        "specVersion": 2,
+        "host": "api.example.com",
+        "basePath": "/v1",
+        "schemes": ["https", "http"]
+      }
+    }
+    ```
+    
+    Generates URLs like: `https://api.example.com/v1/users`
+  </Tab>
+  
+  <Tab title="OpenAPI 3.x">
+    ```json
+    {
+      "spec": {
+        "specVersion": 3,
+        "servers": [
+          "https://api.example.com/v1",
+          "https://staging.example.com/v1"
+        ]
+      }
+    }
+    ```
+    
+    Or with base path:
+    ```json
+    {
+      "spec": {
+        "basePath": "/v1",
+        "servers": [
+          "https://api.example.com",
+          "https://staging.example.com"
+        ]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Advanced Spec Options
+
+See the [tsoa.json Reference](/cli/tsoa-config) for complete details on:
+
+- Security definitions
+- Contact information
+- Tags
+- Spec merging strategies
+- Operation ID templates
+- And more...
+
+## Routes Configuration
+
+Controls route handler generation:
+
+```json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "routesFileName": "routes.ts",
+    "basePath": "/api",
+    "authenticationModule": "./auth.ts",
+    "iocModule": "./ioc.ts"
+  }
+}
+```
+
+### Required Options
+
+<ParamField path="routes.routesDir" type="string" required>
+  Directory where routes file will be generated.
+  
+  ```json
+  { "routes": { "routesDir": "src/generated" } }
+  ```
+</ParamField>
+
+### Middleware Selection
+
+<ParamField path="routes.middleware" type="enum">
+  Web framework to generate routes for:
+  - `"express"` - Express.js
+  - `"koa"` - Koa.js
+  - `"hapi"` - Hapi.js
+  
+  ```json
+  { "routes": { "middleware": "express" } }
+  ```
+</ParamField>
+
+<CodeGroup>
+
+```typescript Express
+import express from 'express';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+app.use(express.json());
+
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+```typescript Koa
+import Koa from 'koa';
+import bodyParser from 'koa-bodyparser';
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+app.use(bodyParser());
+
+RegisterRoutes(app);
+
+app.listen(3000);
+```
+
+```typescript Hapi
+import Hapi from '@hapi/hapi';
+import { RegisterRoutes } from './routes';
+
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost'
+});
+
+await RegisterRoutes(server);
+await server.start();
+```
+
+</CodeGroup>
+
+### Module Integration
+
+<ParamField path="routes.authenticationModule" type="string">
+  Path to authentication handler module.
+  
+  ```json
+  { "routes": { "authenticationModule": "./auth/handler.ts" } }
+  ```
+</ParamField>
+
+Authentication module must export an `expressAuthentication` (or `koaAuthentication`/`hapiAuthentication`) function:
+
+```typescript auth/handler.ts
+import { Request } from 'express';
+
+export function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'jwt') {
+    const token = request.headers.authorization?.split(' ')[1];
+    return verifyJWT(token, scopes);
+  }
+  throw new Error('Unknown security scheme');
+}
+```
+
+<ParamField path="routes.iocModule" type="string">
+  Path to IoC container module (e.g., for InversifyJS).
+  
+  ```json
+  { "routes": { "iocModule": "./ioc/container.ts" } }
+  ```
+</ParamField>
+
+IoC module must export an `iocContainer`:
+
+```typescript ioc/container.ts
+import { Container } from 'inversify';
+import { UserService } from './services';
+
+const iocContainer = new Container();
+iocContainer.bind<UserService>(UserService).toSelf();
+
+export { iocContainer };
+```
+
+### Additional Options
+
+<ParamField path="routes.routesFileName" type="string" default="routes.ts">
+  Name of the generated routes file.
+</ParamField>
+
+<ParamField path="routes.basePath" type="string" default="/">
+  Base path prepended to all routes.
+</ParamField>
+
+<ParamField path="routes.esm" type="boolean" default={false}>
+  Generate imports with `.js` extensions for ES modules.
+  
+  ```json
+  { "routes": { "esm": true } }
+  ```
+  
+  Generates: `import { Controller } from './controller.js'`
+</ParamField>
+
+<ParamField path="routes.bodyCoercion" type="boolean" default={true}>
+  Automatically coerce body parameters to expected types.
+</ParamField>
+
+<ParamField path="routes.noWriteIfUnchanged" type="boolean" default={false}>
+  Skip writing routes file if content hasn't changed (useful for watch mode).
+</ParamField>
+
+## Example Configurations
+
+### Basic Express API
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "silently-remove-extras",
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3,
+    "basePath": "/api"
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "basePath": "/api"
+  }
+}
+```
+
+### Production API with Security
+
+```json tsoa.json
+{
+  "entryFile": "src/server.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "ignore": ["**/node_modules/**", "**/test/**"],
+  "spec": {
+    "outputDirectory": "docs",
+    "specVersion": 3,
+    "specFileBaseName": "openapi",
+    "servers": ["https://api.example.com"],
+    "basePath": "/v1",
+    "securityDefinitions": {
+      "jwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      }
+    }
+  },
+  "routes": {
+    "routesDir": "src/generated",
+    "routesFileName": "routes.ts",
+    "middleware": "express",
+    "basePath": "/v1",
+    "authenticationModule": "./auth/authentication.ts"
+  }
+}
+```
+
+### Microservices with Globs
+
+```json tsoa.json
+{
+  "controllerPathGlobs": [
+    "src/modules/users/controllers/**/*.ts",
+    "src/modules/orders/controllers/**/*.ts",
+    "src/modules/products/controllers/**/*.ts"
+  ],
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "api-docs",
+    "specVersion": 3.1,
+    "yaml": true
+  },
+  "routes": {
+    "routesDir": "src/generated",
+    "middleware": "koa",
+    "iocModule": "./di/container.ts",
+    "authenticationModule": "./middleware/auth.ts"
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="tsoa.json Reference" icon="book" href="/cli/tsoa-config">
+  Complete schema reference with all options
+</Card>
+
+<Card title="CLI Commands" icon="terminal" href="/cli/commands">
+  Learn about CLI commands and flags
+</Card>
+
+</CardGroup>

@@ -1,0 +1,269 @@
+---
+title: CLI Overview
+description: Introduction to the tsoa command-line interface for generating OpenAPI specs and routes
+---
+
+The tsoa CLI is the primary tool for generating OpenAPI specifications and route handlers from your TypeScript controllers. It provides a simple, command-driven workflow for keeping your API documentation and routing logic in sync with your code.
+
+## Installation
+
+Install tsoa as a development dependency in your project:
+
+<CodeGroup>
+
+```bash npm
+npm install tsoa --save-dev
+```
+
+```bash yarn
+yarn add tsoa --dev
+```
+
+```bash pnpm
+pnpm add -D tsoa
+```
+
+</CodeGroup>
+
+## Quick Start
+
+Once installed, you can use the tsoa CLI through npm scripts or directly via npx:
+
+<CodeGroup>
+
+```bash npm script
+# Add to package.json scripts
+"scripts": {
+  "tsoa:spec": "tsoa spec",
+  "tsoa:routes": "tsoa routes",
+  "tsoa:gen": "tsoa spec-and-routes"
+}
+```
+
+```bash npx
+npx tsoa spec
+npx tsoa routes
+npx tsoa spec-and-routes
+```
+
+</CodeGroup>
+
+## Core Commands
+
+tsoa provides three primary commands:
+
+<CardGroup cols={3}>
+
+<Card title="spec" icon="file-code">
+  Generate OpenAPI specification from your TypeScript controllers
+</Card>
+
+<Card title="routes" icon="route">
+  Generate Express/Koa/Hapi route handlers with validation
+</Card>
+
+<Card title="spec-and-routes" icon="layer-group">
+  Generate both spec and routes in a single pass (faster)
+</Card>
+
+</CardGroup>
+
+## Configuration File
+
+All CLI commands rely on a configuration file (default: `tsoa.json`) that defines:
+
+- Entry points to your API controllers
+- Output directories for generated files
+- OpenAPI specification options
+- Route generation settings
+- Middleware selection (Express, Koa, or Hapi)
+
+<CodeGroup>
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "dist",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express"
+  }
+}
+```
+
+```yaml tsoa.yaml
+entryFile: src/app.ts
+noImplicitAdditionalProperties: throw-on-extras
+spec:
+  outputDirectory: dist
+  specVersion: 3
+routes:
+  routesDir: src
+  middleware: express
+```
+
+```javascript tsoa.js
+module.exports = {
+  entryFile: 'src/app.ts',
+  noImplicitAdditionalProperties: 'throw-on-extras',
+  spec: {
+    outputDirectory: 'dist',
+    specVersion: 3
+  },
+  routes: {
+    routesDir: 'src',
+    middleware: 'express'
+  }
+};
+```
+
+</CodeGroup>
+
+## Workflow Integration
+
+### Development Workflow
+
+For development, regenerate specs and routes when controllers change:
+
+```bash
+# Watch mode (using nodemon or similar)
+nodemon --watch src --exec "npm run tsoa:gen && npm start"
+```
+
+### Build Pipeline
+
+Integrate tsoa generation into your build process:
+
+```json package.json
+{
+  "scripts": {
+    "prebuild": "tsoa spec-and-routes",
+    "build": "tsc",
+    "prestart": "npm run build",
+    "start": "node dist/app.js"
+  }
+}
+```
+
+### CI/CD Integration
+
+Validate that generated files are up-to-date in CI:
+
+```yaml .github/workflows/ci.yml
+- name: Generate tsoa files
+  run: npm run tsoa:gen
+
+- name: Check for changes
+  run: |
+    if [[ -n $(git status -s) ]]; then
+      echo "Generated files are out of date"
+      exit 1
+    fi
+```
+
+## Common Flags
+
+All commands support these common options:
+
+<ParamField path="--configuration" type="string" default="tsoa.json">
+  Path to the tsoa configuration file
+  
+  ```bash
+  tsoa spec --configuration config/tsoa.production.json
+  ```
+</ParamField>
+
+<ParamField path="--basePath" type="string">
+  Override the base API path from configuration
+  
+  ```bash
+  tsoa spec --basePath /api/v2
+  ```
+</ParamField>
+
+<ParamField path="--help" type="boolean">
+  Display help information for any command
+  
+  ```bash
+  tsoa --help
+  tsoa spec --help
+  ```
+</ParamField>
+
+## Output Files
+
+Depending on your configuration, tsoa generates:
+
+### Specification Files
+
+- `swagger.json` or `swagger.yaml` - OpenAPI specification
+- Location determined by `spec.outputDirectory` and `spec.specFileBaseName`
+
+### Route Files
+
+- `routes.ts` - Generated route handlers with validation
+- Location determined by `routes.routesDir` and `routes.routesFileName`
+- Includes type-safe request/response handling
+- Built-in validation middleware
+
+<Note>
+  Generated files should typically be committed to version control, as they're part of your application's runtime behavior.
+</Note>
+
+## Error Handling
+
+The CLI provides detailed error messages for common issues:
+
+<AccordionGroup>
+
+<Accordion title="Missing configuration file">
+  ```
+  No config file found at 'tsoa.json'
+  ```
+  
+  **Solution:** Create a `tsoa.json` file or specify a custom path with `--configuration`
+</Accordion>
+
+<Accordion title="Invalid entry file">
+  ```
+  EntryFile not found: src/app.ts - please check your tsoa config
+  ```
+  
+  **Solution:** Ensure the `entryFile` path is correct and the file exists
+</Accordion>
+
+<Accordion title="Missing output directory">
+  ```
+  Missing outputDirectory: configuration must contain output directory
+  ```
+  
+  **Solution:** Add `spec.outputDirectory` or `routes.routesDir` to your config
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Commands Reference" icon="terminal" href="/cli/commands">
+  Detailed documentation for each CLI command
+</Card>
+
+<Card title="Configuration Guide" icon="gear" href="/cli/configuration">
+  Complete configuration options and examples
+</Card>
+
+<Card title="tsoa.json Schema" icon="file-code" href="/cli/tsoa-config">
+  Full configuration schema reference
+</Card>
+
+<Card title="Quick Start" icon="rocket" href="/quickstart">
+  Get started with a complete example
+</Card>
+
+</CardGroup>

@@ -1,0 +1,684 @@
+---
+title: 'Decorators'
+description: 'Extract and validate data from HTTP requests using parameter decorators'
+icon: 'at'
+---
+
+## Overview
+
+tsoa uses TypeScript decorators to extract data from different parts of an HTTP request. Parameter decorators tell tsoa where to find data and automatically validate and transform it according to TypeScript types.
+
+<Note>
+  Decorators are applied to method parameters and use TypeScript's type system to provide automatic validation and OpenAPI documentation.
+</Note>
+
+## Request Body
+
+### @Body
+
+Extract the entire request body:
+
+```typescript
+import { Post, Body, Route } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Post()
+  public async createUser(@Body() user: User): Promise<User> {
+    return await userService.create(user);
+  }
+}
+
+// Request:
+// POST /users
+// Content-Type: application/json
+// {"name": "John", "email": "john@example.com"}
+```
+
+### @BodyProp
+
+Extract a specific property from the request body:
+
+```typescript
+import { Post, BodyProp, Route } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Post('update-email')
+  public async updateEmail(
+    @BodyProp() userId: number,
+    @BodyProp() email: string
+  ): Promise<void> {
+    await userService.updateEmail(userId, email);
+  }
+}
+
+// Request:
+// POST /users/update-email
+// {"userId": 123, "email": "newemail@example.com"}
+```
+
+**Named property:**
+
+```typescript
+@Post('settings')
+public async updateSettings(
+  @BodyProp('user_id') userId: number,
+  @BodyProp('notification_enabled') notificationsEnabled: boolean
+): Promise<void> {
+  await userService.updateSettings(userId, notificationsEnabled);
+}
+
+// Request body uses snake_case:
+// {"user_id": 123, "notification_enabled": true}
+```
+
+## URL Parameters
+
+### @Path
+
+Extract path parameters from the URL:
+
+```typescript
+import { Get, Path, Delete, Route } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+
+  @Delete('{userId}/posts/{postId}')
+  public async deletePost(
+    @Path() userId: number,
+    @Path() postId: number
+  ): Promise<void> {
+    await postService.delete(userId, postId);
+  }
+}
+
+// Matches: GET /users/123
+// Matches: DELETE /users/123/posts/456
+```
+
+<Warning>
+  Path parameter names in the route must match the parameter names exactly (case-sensitive).
+</Warning>
+
+**Named path parameter:**
+
+```typescript
+@Get('{user_id}')
+public async getUser(@Path('user_id') userId: number): Promise<User> {
+  return await userService.getById(userId);
+}
+
+// URL: /users/123
+// The route uses 'user_id' but the parameter is named 'userId'
+```
+
+## Query Parameters
+
+### @Query
+
+Extract query string parameters:
+
+```typescript
+import { Get, Query, Route } from '@tsoa/runtime';
+
+@Route('products')
+export class ProductController {
+  @Get('search')
+  public async search(
+    @Query() query: string,
+    @Query() category?: string,
+    @Query() page: number = 1,
+    @Query() limit: number = 20
+  ): Promise<Product[]> {
+    return await productService.search({
+      query,
+      category,
+      page,
+      limit
+    });
+  }
+}
+
+// Request: GET /products/search?query=laptop&category=electronics&page=2&limit=10
+```
+
+**Named query parameter:**
+
+```typescript
+@Get('filter')
+public async filter(
+  @Query('max_price') maxPrice?: number,
+  @Query('min_rating') minRating?: number
+): Promise<Product[]> {
+  return await productService.filter({ maxPrice, minRating });
+}
+
+// Request: GET /products/filter?max_price=1000&min_rating=4
+```
+
+### @Queries
+
+Extract all query parameters as a single object:
+
+```typescript
+import { Get, Queries, Route } from '@tsoa/runtime';
+
+interface SearchParams {
+  query: string;
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  page?: number;
+  limit?: number;
+}
+
+@Route('products')
+export class ProductController {
+  @Get('search')
+  public async search(@Queries() params: SearchParams): Promise<Product[]> {
+    return await productService.search(params);
+  }
+}
+
+// Request: GET /products/search?query=laptop&category=electronics&minPrice=500
+```
+
+**Wildcard queries (any property):**
+
+```typescript
+@Get('filter')
+public async filterDynamic(
+  @Queries() filters: { [key: string]: any }
+): Promise<Product[]> {
+  return await productService.filterDynamic(filters);
+}
+
+// Accepts any query parameters:
+// GET /products/filter?color=red&size=large&custom_field=value
+```
+
+**Typed record queries:**
+
+```typescript
+@Get('stats')
+public async getStats(
+  @Queries() metrics: { [metric: string]: number }
+): Promise<Stats> {
+  return await statsService.calculate(metrics);
+}
+
+// All query parameters must be numbers:
+// GET /products/stats?views=100&clicks=50&conversions=5
+```
+
+## Headers
+
+### @Header
+
+Extract HTTP headers:
+
+```typescript
+import { Get, Header, Route } from '@tsoa/runtime';
+
+@Route('api')
+export class ApiController {
+  @Get('data')
+  public async getData(
+    @Header('authorization') authToken: string,
+    @Header('x-api-version') apiVersion?: string,
+    @Header('accept-language') language: string = 'en'
+  ): Promise<Data> {
+    return await dataService.getData(authToken, apiVersion, language);
+  }
+}
+
+// Request:
+// GET /api/data
+// Authorization: Bearer token123
+// X-API-Version: 2.0
+// Accept-Language: en-US
+```
+
+<Note>
+  Header names are case-insensitive. Both `Authorization` and `authorization` will match.
+</Note>
+
+## File Uploads
+
+### @UploadedFile
+
+Handle single file uploads:
+
+```typescript
+import { Post, UploadedFile, Route } from '@tsoa/runtime';
+import { File } from '@tsoa/runtime';
+
+@Route('files')
+export class FileController {
+  @Post('upload')
+  public async uploadFile(
+    @UploadedFile() file: File
+  ): Promise<{ url: string }> {
+    const url = await fileService.upload(file);
+    return { url };
+  }
+
+  @Post('avatar')
+  public async uploadAvatar(
+    @UploadedFile('avatar') avatar: File,
+    @UploadedFile('thumbnail') thumbnail?: File
+  ): Promise<User> {
+    const avatarUrl = await fileService.upload(avatar);
+    const thumbnailUrl = thumbnail 
+      ? await fileService.upload(thumbnail)
+      : undefined;
+    
+    return await userService.updateAvatar(avatarUrl, thumbnailUrl);
+  }
+}
+```
+
+**File object properties:**
+```typescript
+interface File {
+  originalname: string;  // Original filename
+  encoding: string;      // File encoding
+  mimetype: string;      // MIME type
+  buffer: Buffer;        // File contents
+  size: number;         // File size in bytes
+}
+```
+
+### @UploadedFiles
+
+Handle multiple file uploads:
+
+```typescript
+import { Post, UploadedFiles, Route } from '@tsoa/runtime';
+
+@Route('files')
+export class FileController {
+  @Post('batch')
+  public async uploadMultiple(
+    @UploadedFiles('files') files: File[]
+  ): Promise<{ urls: string[] }> {
+    const urls = await Promise.all(
+      files.map(file => fileService.upload(file))
+    );
+    return { urls };
+  }
+
+  @Post('mixed')
+  public async uploadMixed(
+    @UploadedFile('document') document: File,
+    @UploadedFiles('images') images: File[],
+    @UploadedFiles('attachments') attachments: File[]
+  ): Promise<UploadResult> {
+    const docUrl = await fileService.upload(document);
+    const imageUrls = await fileService.uploadMany(images);
+    const attachmentUrls = await fileService.uploadMany(attachments);
+    
+    return { docUrl, imageUrls, attachmentUrls };
+  }
+}
+```
+
+## Form Data
+
+### @FormField
+
+Extract form fields from multipart/form-data:
+
+```typescript
+import { Post, FormField, UploadedFile, Route } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Post('profile')
+  public async updateProfile(
+    @FormField('username') username: string,
+    @FormField('bio') bio: string,
+    @UploadedFile('avatar') avatar?: File
+  ): Promise<User> {
+    return await userService.updateProfile({
+      username,
+      bio,
+      avatar
+    });
+  }
+
+  @Post('upload-document')
+  public async uploadDocument(
+    @UploadedFile('file') file: File,
+    @FormField('title') title: string,
+    @FormField('description') description: string,
+    @FormField('tags') tags: string
+  ): Promise<Document> {
+    return await documentService.create({
+      file,
+      title,
+      description,
+      tags: tags.split(',')
+    });
+  }
+}
+```
+
+## Request Object
+
+### @Request
+
+Access the raw framework request object:
+
+```typescript
+import { Get, Request, Route } from '@tsoa/runtime';
+import { Request as ExpressRequest } from 'express';
+
+@Route('api')
+export class ApiController {
+  @Get('info')
+  public async getRequestInfo(
+    @Request() request: ExpressRequest
+  ): Promise<RequestInfo> {
+    return {
+      ip: request.ip,
+      userAgent: request.get('user-agent'),
+      protocol: request.protocol,
+      method: request.method,
+      path: request.path
+    };
+  }
+}
+```
+
+<Warning>
+  Using `@Request` couples your code to a specific framework (Express, Koa, etc.). Use specific decorators like `@Header` when possible for better portability.
+</Warning>
+
+### @RequestProp
+
+Extract a specific property from the request object:
+
+```typescript
+import { Get, RequestProp, Route } from '@tsoa/runtime';
+
+interface RequestWithUser {
+  user?: {
+    id: number;
+    email: string;
+  };
+}
+
+@Route('api')
+export class ApiController {
+  @Get('me')
+  public async getCurrentUser(
+    @RequestProp('user') user: RequestWithUser['user']
+  ): Promise<User> {
+    if (!user) throw new Error('Not authenticated');
+    return await userService.getById(user.id);
+  }
+}
+```
+
+## Dependency Injection
+
+### @Inject
+
+Mark parameters that should be injected by your IoC container:
+
+```typescript
+import { Get, Inject, Route } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Get()
+  public async getUsers(
+    @Inject() logger: Logger,
+    @Inject() userService: UserService
+  ): Promise<User[]> {
+    logger.info('Fetching all users');
+    return await userService.getAll();
+  }
+}
+```
+
+<Note>
+  Parameters marked with `@Inject()` won't be documented in the OpenAPI spec and must be provided by your IoC container.
+</Note>
+
+## Content Type
+
+### @Consumes
+
+Specify accepted content types for the request body:
+
+```typescript
+import { Post, Body, Consumes, Route } from '@tsoa/runtime';
+
+@Route('files')
+export class FileController {
+  @Post('upload')
+  @Consumes('multipart/form-data')
+  public async uploadFile(
+    @UploadedFile() file: File
+  ): Promise<UploadResult> {
+    return await fileService.upload(file);
+  }
+
+  @Post('data')
+  @Consumes('application/x-www-form-urlencoded')
+  public async submitForm(
+    @FormField('name') name: string,
+    @FormField('email') email: string
+  ): Promise<void> {
+    await formService.process({ name, email });
+  }
+
+  @Post('json-or-xml')
+  @Consumes('application/json', 'application/xml')
+  public async handleData(@Body() data: Data): Promise<Result> {
+    return await dataService.process(data);
+  }
+}
+```
+
+## Type Conversion
+
+tsoa automatically converts parameter types based on TypeScript annotations:
+
+<Tabs>
+  <Tab title="Numbers">
+    ```typescript
+    @Get('{id}')
+    public async getItem(
+      @Path() id: number,
+      @Query() page: number,
+      @Query() limit: number = 10
+    ): Promise<Item> {
+      // id, page, and limit are automatically converted to numbers
+      return await itemService.get(id, page, limit);
+    }
+
+    // GET /items/123?page=2&limit=20
+    // id = 123 (number)
+    // page = 2 (number)
+    // limit = 20 (number)
+    ```
+  </Tab>
+  <Tab title="Booleans">
+    ```typescript
+    @Get('items')
+    public async getItems(
+      @Query() includeDeleted: boolean,
+      @Query() sortAscending: boolean = true
+    ): Promise<Item[]> {
+      // Booleans accept: true, false, "true", "false", 1, 0
+      return await itemService.getAll(includeDeleted, sortAscending);
+    }
+
+    // GET /items?includeDeleted=true&sortAscending=false
+    // includeDeleted = true (boolean)
+    // sortAscending = false (boolean)
+    ```
+  </Tab>
+  <Tab title="Dates">
+    ```typescript
+    @Get('events')
+    public async getEvents(
+      @Query() startDate: Date,
+      @Query() endDate?: Date
+    ): Promise<Event[]> {
+      // Dates are parsed from ISO 8601 strings
+      return await eventService.getByDateRange(startDate, endDate);
+    }
+
+    // GET /events?startDate=2024-01-01T00:00:00Z&endDate=2024-12-31T23:59:59Z
+    // startDate = Date object
+    // endDate = Date object
+    ```
+  </Tab>
+  <Tab title="Arrays">
+    ```typescript
+    @Get('items')
+    public async getItems(
+      @Query() ids: number[],
+      @Query() tags?: string[]
+    ): Promise<Item[]> {
+      return await itemService.getByIds(ids, tags);
+    }
+
+    // GET /items?ids=1&ids=2&ids=3&tags=foo&tags=bar
+    // ids = [1, 2, 3] (number[])
+    // tags = ["foo", "bar"] (string[])
+    ```
+  </Tab>
+  <Tab title="Enums">
+    ```typescript
+    enum SortOrder {
+      ASC = 'asc',
+      DESC = 'desc'
+    }
+
+    @Get('items')
+    public async getItems(
+      @Query() sort: SortOrder = SortOrder.ASC
+    ): Promise<Item[]> {
+      return await itemService.getAll(sort);
+    }
+
+    // GET /items?sort=desc
+    // sort = SortOrder.DESC
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Specific Decorators">
+    Prefer specific decorators over `@Request()` for better portability:
+    
+    ```typescript
+    // Good: Framework-agnostic
+    @Get('data')
+    public async getData(
+      @Header('authorization') token: string,
+      @Query() page: number
+    ): Promise<Data> {
+      return await dataService.get(token, page);
+    }
+
+    // Avoid: Coupled to Express
+    @Get('data')
+    public async getData(
+      @Request() req: ExpressRequest
+    ): Promise<Data> {
+      const token = req.get('authorization');
+      const page = parseInt(req.query.page as string);
+      return await dataService.get(token, page);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Provide Default Values">
+    Use default values for optional parameters:
+    
+    ```typescript
+    @Get('items')
+    public async getItems(
+      @Query() page: number = 1,
+      @Query() limit: number = 20,
+      @Query() sort: 'asc' | 'desc' = 'asc'
+    ): Promise<Item[]> {
+      return await itemService.getAll({ page, limit, sort });
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Interfaces for Complex Queries">
+    Define interfaces for complex query parameters:
+    
+    ```typescript
+    interface ProductFilters {
+      category?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      inStock?: boolean;
+      tags?: string[];
+    }
+
+    @Get('products')
+    public async getProducts(
+      @Queries() filters: ProductFilters
+    ): Promise<Product[]> {
+      return await productService.filter(filters);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Validate File Uploads">
+    Always validate file uploads in your service layer:
+    
+    ```typescript
+    @Post('upload')
+    public async uploadFile(
+      @UploadedFile() file: File
+    ): Promise<UploadResult> {
+      // Validate in service
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('File too large');
+      }
+      
+      if (!file.mimetype.startsWith('image/')) {
+        throw new Error('Only images allowed');
+      }
+      
+      return await fileService.upload(file);
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Add validation rules to your parameters
+  </Card>
+  <Card title="Models" icon="cube" href="/concepts/models">
+    Define TypeScript interfaces for complex types
+  </Card>
+  <Card title="Responses" icon="reply" href="/concepts/responses">
+    Handle different response types and status codes
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your endpoints
+  </Card>
+</CardGroup>

@@ -1,0 +1,697 @@
+---
+title: Error Handling
+description: Comprehensive error handling strategies for tsoa applications including validation, authentication, and custom errors
+---
+
+tsoa provides robust error handling mechanisms that integrate seamlessly with OpenAPI specifications. Understanding how to properly handle errors ensures your API provides clear, actionable feedback to clients.
+
+## Built-in Error Types
+
+### ValidateError
+
+tsoa automatically validates request data against your TypeScript types and throws `ValidateError` for validation failures:
+
+```typescript
+import { ValidateError } from '@tsoa/runtime';
+
+// This error is thrown automatically by tsoa
+throw new ValidateError(
+  {
+    email: {
+      message: "invalid string value",
+      value: 123
+    },
+    age: {
+      message: "min 18",
+      value: 15
+    }
+  },
+  "Validation failed"
+);
+```
+
+The `ValidateError` structure:
+- **status**: Always `400`
+- **name**: `"ValidateError"`
+- **fields**: Object mapping field names to error details
+- **message**: Human-readable error description
+
+<Note>
+  tsoa's runtime validation is based on your TypeScript types and JSDoc annotations. You don't need to manually throw `ValidateError` unless implementing custom validation logic.
+</Note>
+
+## Validation Error Handling
+
+### Automatic Validation
+
+tsoa performs automatic validation based on TypeScript types:
+
+```typescript
+import { Controller, Post, Route, Body } from 'tsoa';
+
+interface CreateUserRequest {
+  /** @minLength 3 */
+  name: string;
+  /** @isEmail */
+  email: string;
+  /** @minimum 18 @maximum 120 */
+  age: number;
+  /** @pattern ^\+?[1-9]\d{1,14}$ */
+  phone?: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  @Post()
+  public async createUser(@Body() body: CreateUserRequest): Promise<User> {
+    // tsoa validates body automatically
+    // If validation fails, returns 400 with detailed error information
+    return await userService.create(body);
+  }
+}
+```
+
+When validation fails, the client receives:
+
+```json
+{
+  "fields": {
+    "name": {
+      "message": "minLength 3",
+      "value": "ab"
+    },
+    "email": {
+      "message": "invalid string value",
+      "value": "not-an-email"
+    },
+    "age": {
+      "message": "min 18",
+      "value": 15
+    }
+  },
+  "message": "Validation failed"
+}
+```
+
+### Custom Validation Messages
+
+Provide custom error messages using JSDoc annotations:
+
+```typescript
+interface CreateProductRequest {
+  /**
+   * Product name
+   * @minLength 3 "Product name must be at least 3 characters"
+   * @maxLength 100 "Product name cannot exceed 100 characters"
+   */
+  name: string;
+  
+  /**
+   * Product price in cents
+   * @minimum 1 "Price must be greater than 0"
+   * @isInt "Price must be a valid integer"
+   */
+  price: number;
+  
+  /**
+   * Product SKU
+   * @pattern ^[A-Z0-9]{6,12}$ "SKU must be 6-12 uppercase alphanumeric characters"
+   */
+  sku: string;
+}
+
+@Route('products')
+export class ProductController extends Controller {
+  @Post()
+  public async createProduct(@Body() body: CreateProductRequest): Promise<Product> {
+    return await productService.create(body);
+  }
+}
+```
+
+### Validation Error Size Limits
+
+For complex types like large unions, validation errors can become very large. Configure error size limits:
+
+```json
+{
+  "routes": {
+    "routesDir": "src/generated",
+    "middleware": "express",
+    "maxValidationErrorSize": 1000
+  }
+}
+```
+
+This prevents excessive error message sizes that can occur with deeply nested unions:
+
+```typescript
+// Test from tsoa's validation-errors-express.spec.ts
+describe('Large Union Validation Errors', () => {
+  it('should return reasonably sized error response', async () => {
+    const response = await request(app)
+      .post('/ValidationTest/UnionType')
+      .send({ unionProperty: { type: 'invalid' } })
+      .expect(400);
+
+    const responseSize = JSON.stringify(response.body).length;
+    expect(responseSize).to.be.lessThan(2000);
+  });
+});
+```
+
+### Handling Excess Properties
+
+Control how tsoa handles properties not defined in your types:
+
+<CodeGroup>
+
+```json tsoa.json (Throw on Extras)
+{
+  "noImplicitAdditionalProperties": "throw-on-extras"
+}
+```
+
+```json tsoa.json (Remove Extras)
+{
+  "noImplicitAdditionalProperties": "silently-remove-extras"
+}
+```
+
+```json tsoa.json (Ignore Extras)
+{
+  "noImplicitAdditionalProperties": "ignore"
+}
+```
+
+</CodeGroup>
+
+Example with `throw-on-extras`:
+
+```typescript
+interface StrictUser {
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  @Post()
+  public async createUser(@Body() body: StrictUser): Promise<User> {
+    return await userService.create(body);
+  }
+}
+
+// Request with extra properties:
+// POST /users
+// { "name": "John", "email": "john@example.com", "age": 30 }
+
+// Response (400):
+// {
+//   "fields": {
+//     "age": {
+//       "message": "\"age\" is an excess property and therefore is not allowed",
+//       "value": "age"
+//     }
+//   }
+// }
+```
+
+## HTTP Status Errors
+
+### Standard HTTP Errors
+
+Create custom error classes for different HTTP status codes:
+
+```typescript
+import { Controller, Get, Route, Path } from 'tsoa';
+
+export class NotFoundError extends Error {
+  statusCode = 404;
+  
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class UnauthorizedError extends Error {
+  statusCode = 401;
+  
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export class ForbiddenError extends Error {
+  statusCode = 403;
+  
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
+export class ConflictError extends Error {
+  statusCode = 409;
+  
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+@Route('users')
+export class UserController extends Controller {
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    const user = await userService.findById(userId);
+    
+    if (!user) {
+      throw new NotFoundError(`User with ID ${userId} not found`);
+    }
+    
+    return user;
+  }
+}
+```
+
+### Documenting Error Responses
+
+Document error responses in OpenAPI using the `@Response` decorator:
+
+```typescript
+import { Controller, Get, Post, Route, Path, Body, Response } from 'tsoa';
+
+interface ErrorResponse {
+  message: string;
+  code?: string;
+}
+
+interface ValidationErrorResponse {
+  message: string;
+  fields: Record<string, { message: string; value?: any }>;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Get user by ID
+   * @param userId User's unique identifier
+   */
+  @Response<ErrorResponse>(404, 'User not found')
+  @Response<ErrorResponse>(500, 'Internal server error')
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    const user = await userService.findById(userId);
+    
+    if (!user) {
+      this.setStatus(404);
+      throw new Error(`User with ID ${userId} not found`);
+    }
+    
+    return user;
+  }
+  
+  /**
+   * Create a new user
+   */
+  @Response<ValidationErrorResponse>(400, 'Validation failed')
+  @Response<ErrorResponse>(409, 'User already exists')
+  @Post()
+  public async createUser(@Body() body: CreateUserRequest): Promise<User> {
+    const existing = await userService.findByEmail(body.email);
+    
+    if (existing) {
+      this.setStatus(409);
+      throw new Error(`User with email ${body.email} already exists`);
+    }
+    
+    return await userService.create(body);
+  }
+}
+```
+
+## Authentication Errors
+
+Handle authentication errors with proper status codes:
+
+```typescript
+import * as express from 'express';
+import jwt from 'jsonwebtoken';
+
+export function expressAuthentication(
+  req: express.Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'jwt') {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return Promise.reject({
+        status: 401,
+        message: 'No token provided'
+      });
+    }
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+      
+      // Check scopes if required
+      if (scopes && scopes.length > 0) {
+        const userScopes = (decoded as any).scopes || [];
+        const hasRequiredScopes = scopes.every(scope => 
+          userScopes.includes(scope)
+        );
+        
+        if (!hasRequiredScopes) {
+          return Promise.reject({
+            status: 403,
+            message: 'Insufficient permissions'
+          });
+        }
+      }
+      
+      return Promise.resolve(decoded);
+    } catch (error) {
+      return Promise.reject({
+        status: 401,
+        message: 'Invalid or expired token'
+      });
+    }
+  } else if (securityName === 'api_key') {
+    const apiKey = req.query.access_token as string;
+    
+    if (!apiKey) {
+      return Promise.reject({
+        status: 401,
+        message: 'API key required'
+      });
+    }
+    
+    if (apiKey === 'valid-key') {
+      return Promise.resolve({ id: 1, name: 'API User' });
+    }
+    
+    return Promise.reject({
+      status: 401,
+      message: 'Invalid API key'
+    });
+  }
+  
+  return Promise.reject({
+    status: 401,
+    message: 'Unknown authentication method'
+  });
+}
+```
+
+## Global Error Handler
+
+Implement a global error handler in your Express app:
+
+```typescript
+import express from 'express';
+import { ValidateError } from '@tsoa/runtime';
+import { RegisterRoutes } from './generated/routes';
+
+const app = express();
+
+// Register routes
+RegisterRoutes(app);
+
+// Global error handler (must be after routes)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Handle tsoa validation errors
+  if (err instanceof ValidateError) {
+    console.warn(`Validation Error for ${req.path}:`, err.fields);
+    return res.status(400).json({
+      message: 'Validation Failed',
+      fields: err.fields
+    });
+  }
+  
+  // Handle custom errors with statusCode
+  if (err.statusCode) {
+    return res.status(err.statusCode).json({
+      message: err.message
+    });
+  }
+  
+  // Handle authentication/authorization errors
+  if (err.status === 401 || err.status === 403) {
+    return res.status(err.status).json({
+      message: err.message
+    });
+  }
+  
+  // Log unexpected errors
+  console.error('Unexpected error:', err);
+  
+  // Don't expose internal error details in production
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(500).json({
+      message: 'Internal server error'
+    });
+  }
+  
+  // In development, return full error details
+  return res.status(500).json({
+    message: err.message,
+    stack: err.stack
+  });
+});
+
+export { app };
+```
+
+## Koa Error Handling
+
+For Koa applications:
+
+```typescript
+import Koa from 'koa';
+import { ValidateError } from '@tsoa/runtime';
+import { RegisterRoutes } from './generated/routes';
+
+const app = new Koa();
+
+// Global error handler
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    // Handle tsoa validation errors
+    if (err instanceof ValidateError) {
+      ctx.status = 400;
+      ctx.body = {
+        message: 'Validation Failed',
+        fields: err.fields
+      };
+      return;
+    }
+    
+    // Handle custom errors
+    if (err.statusCode) {
+      ctx.status = err.statusCode;
+      ctx.body = { message: err.message };
+      return;
+    }
+    
+    // Handle authentication errors
+    if (err.status === 401 || err.status === 403) {
+      ctx.status = err.status;
+      ctx.body = { message: err.message };
+      return;
+    }
+    
+    // Log unexpected errors
+    console.error('Unexpected error:', err);
+    ctx.status = 500;
+    ctx.body = {
+      message: process.env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : err.message
+    };
+  }
+});
+
+RegisterRoutes(app);
+
+export { app };
+```
+
+## Async Error Handling
+
+tsoa controllers handle async errors automatically:
+
+```typescript
+import { Controller, Get, Route, Path } from 'tsoa';
+
+@Route('async')
+export class AsyncController extends Controller {
+  @Get('user/{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    // Any thrown error (sync or async) is caught automatically
+    const user = await userService.findById(userId);
+    
+    if (!user) {
+      throw new NotFoundError(`User ${userId} not found`);
+    }
+    
+    // Async operations can reject
+    const profile = await profileService.getForUser(userId);
+    
+    return { ...user, profile };
+  }
+  
+  @Get('complex')
+  public async complexOperation(): Promise<Result> {
+    try {
+      const data = await externalService.getData();
+      return await processor.process(data);
+    } catch (error) {
+      // Transform external errors to API errors
+      if (error instanceof ExternalServiceError) {
+        throw new ServiceUnavailableError('External service temporarily unavailable');
+      }
+      throw error;
+    }
+  }
+}
+```
+
+## Structured Error Responses
+
+Create a consistent error response structure:
+
+```typescript
+import { Controller, Get, Route } from 'tsoa';
+
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: any;
+  timestamp: string;
+  path: string;
+}
+
+export class ApplicationError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public statusCode: number = 500,
+    public details?: any
+  ) {
+    super(message);
+    this.name = 'ApplicationError';
+  }
+  
+  toJSON(): ApiError {
+    return {
+      code: this.code,
+      message: this.message,
+      details: this.details,
+      timestamp: new Date().toISOString(),
+      path: '' // Set by error handler
+    };
+  }
+}
+
+// Error handler middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof ApplicationError) {
+    const errorResponse = err.toJSON();
+    errorResponse.path = req.path;
+    return res.status(err.statusCode).json(errorResponse);
+  }
+  
+  if (err instanceof ValidateError) {
+    return res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: 'Validation failed',
+      details: err.fields,
+      timestamp: new Date().toISOString(),
+      path: req.path
+    });
+  }
+  
+  // Default error
+  res.status(500).json({
+    code: 'INTERNAL_ERROR',
+    message: 'An unexpected error occurred',
+    timestamp: new Date().toISOString(),
+    path: req.path
+  });
+});
+
+// Usage in controller
+@Route('products')
+export class ProductController extends Controller {
+  @Get('{productId}')
+  public async getProduct(@Path() productId: string): Promise<Product> {
+    const product = await productService.findById(productId);
+    
+    if (!product) {
+      throw new ApplicationError(
+        'PRODUCT_NOT_FOUND',
+        `Product ${productId} does not exist`,
+        404,
+        { productId }
+      );
+    }
+    
+    return product;
+  }
+}
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use appropriate status codes">
+    Return correct HTTP status codes (400 for validation, 401 for auth, 404 for not found, etc.).
+  </Step>
+  
+  <Step title="Document all error responses">
+    Use `@Response` decorators to document error cases in OpenAPI.
+  </Step>
+  
+  <Step title="Provide actionable error messages">
+    Error messages should help clients understand what went wrong and how to fix it.
+  </Step>
+  
+  <Step title="Never expose sensitive data">
+    Don't include stack traces, credentials, or internal paths in production error responses.
+  </Step>
+  
+  <Step title="Log errors appropriately">
+    Log validation errors at warning level, unexpected errors at error level.
+  </Step>
+  
+  <Step title="Use structured errors">
+    Consistent error response format makes client error handling easier.
+  </Step>
+  
+  <Step title="Handle async errors">
+    Always handle promise rejections to prevent unhandled promise rejections.
+  </Step>
+</Steps>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Learn about tsoa's built-in validation system
+  </Card>
+  
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Handle authentication and authorization errors
+  </Card>
+  
+  <Card title="Middleware" icon="layer-group" href="/advanced/middleware">
+    Use middleware for cross-cutting error handling
+  </Card>
+</CardGroup>

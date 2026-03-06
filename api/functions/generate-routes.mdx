@@ -1,0 +1,571 @@
+---
+title: "generateRoutes"
+description: "Generate route registration code for Express, Koa, or Hapi"
+---
+
+## Overview
+
+The `generateRoutes` function generates route registration code that wires up your tsoa controllers to your chosen web framework (Express, Koa, or Hapi). It creates a routes file that handles request validation, parameter extraction, and controller invocation.
+
+## Signature
+
+```typescript
+async function generateRoutes<Config extends ExtendedRoutesConfig>(
+  routesConfig: Config,
+  compilerOptions?: ts.CompilerOptions,
+  ignorePaths?: string[],
+  metadata?: Tsoa.Metadata,
+  defaultNumberType?: BaseConfig['defaultNumberType']
+): Promise<Tsoa.Metadata>
+```
+
+## Parameters
+
+<ParamField path="routesConfig" type="ExtendedRoutesConfig" required>
+  Configuration object for route generation. See [RoutesConfig](/api/interfaces/routes-config) for details.
+  
+  Must include:
+  - `entryFile`: The entry point to your API
+  - `routesDir`: Where to write the generated routes file
+  - `middleware`: The web framework ('express', 'koa', or 'hapi')
+</ParamField>
+
+<ParamField path="compilerOptions" type="ts.CompilerOptions" optional>
+  TypeScript compiler options to use during generation.
+  
+  If not provided, tsoa will use the compiler options from your `tsconfig.json`.
+</ParamField>
+
+<ParamField path="ignorePaths" type="string[]" optional>
+  Array of path globs to ignore during TypeScript metadata scan.
+  
+  Example: `['**/node_modules/**', '**/dist/**']`
+</ParamField>
+
+<ParamField path="metadata" type="Tsoa.Metadata" optional>
+  Pre-computed metadata from a previous generation step (e.g., from `generateSpec`).
+  
+  Pass this to avoid re-scanning your controllers.
+</ParamField>
+
+<ParamField path="defaultNumberType" type="'double' | 'float' | 'integer' | 'long'" optional>
+  Default OpenAPI number type for TypeScript's `number` type when no type annotation is present.
+  
+  Default: `'double'`
+</ParamField>
+
+## Returns
+
+<ResponseField name="metadata" type="Tsoa.Metadata">
+  The generated metadata object containing all controller and route information.
+  
+  This can be passed to `generateSpec` to avoid re-scanning your codebase.
+</ResponseField>
+
+## Usage
+
+### Express Routes
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  basePath: '/api'
+};
+
+await generateRoutes(config);
+// Generates: ./src/routes.ts
+```
+
+### Koa Routes
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'koa',
+  basePath: '/api/v1'
+};
+
+await generateRoutes(config);
+// Generates: ./src/routes.ts
+```
+
+### Hapi Routes
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'hapi',
+  basePath: '/api'
+};
+
+await generateRoutes(config);
+// Generates: ./src/routes.ts
+```
+
+### Custom Routes Filename
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src/generated',
+  routesFileName: 'tsoa-routes.ts',
+  middleware: 'express'
+};
+
+await generateRoutes(config);
+// Generates: ./src/generated/tsoa-routes.ts
+```
+
+### With IoC Container (Dependency Injection)
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  iocModule: './src/ioc',
+  basePath: '/api'
+};
+
+await generateRoutes(config);
+```
+
+### With Authentication Module
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  authenticationModule: './src/authentication',
+  basePath: '/api'
+};
+
+await generateRoutes(config);
+```
+
+### ESM Support
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  esm: true, // Add .js extensions to imports
+  basePath: '/api'
+};
+
+await generateRoutes(config);
+```
+
+### Reusing Metadata from Spec Generation
+
+```typescript
+import { generateSpec, generateRoutes } from 'tsoa';
+
+const specConfig = {
+  entryFile: './src/app.ts',
+  outputDirectory: './dist',
+  specVersion: 3
+};
+
+const routesConfig = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express'
+};
+
+// Generate spec first
+const metadata = await generateSpec(specConfig);
+
+// Reuse metadata for routes (avoids re-scanning)
+await generateRoutes(routesConfig, undefined, undefined, metadata);
+```
+
+### Avoid Writing If Unchanged
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  noWriteIfUnchanged: true // Don't write if file hasn't changed
+};
+
+await generateRoutes(config);
+```
+
+### Full Configuration Example
+
+```typescript
+import { generateRoutes } from 'tsoa';
+
+const config = {
+  entryFile: './src/server.ts',
+  routesDir: './src/generated',
+  routesFileName: 'routes.ts',
+  middleware: 'express',
+  basePath: '/api/v2',
+  
+  // IoC Container
+  iocModule: './src/inversify.config',
+  
+  // Authentication
+  authenticationModule: './src/auth',
+  
+  // ESM Support
+  esm: true,
+  
+  // Optimization
+  noWriteIfUnchanged: true,
+  
+  // Body coercion
+  bodyCoercion: true,
+  
+  // Controller Discovery
+  controllerPathGlobs: [
+    './src/controllers/**/*.ts',
+    './src/modules/**/controllers/*.ts'
+  ]
+};
+
+await generateRoutes(config);
+```
+
+## Generated Routes File
+
+### Express Example
+
+The generated routes file exports a `RegisterRoutes` function:
+
+```typescript
+// Generated routes.ts
+import { Controller, ValidateError, FieldErrors, TsoaResponse } from '@tsoa/runtime';
+import { UserController } from './controllers/userController';
+
+export function RegisterRoutes(app: Express.Application): void {
+  app.get('/api/users/:userId',
+    async function UserController_getUser(request: any, response: any, next: any) {
+      const args = {
+        userId: {"in":"path","name":"userId","required":true,"dataType":"string"},
+      };
+
+      let validatedArgs: any[] = [];
+      try {
+        validatedArgs = getValidatedArgs(args, request, response);
+        
+        const controller = new UserController();
+        const promise = controller.getUser.apply(controller, validatedArgs as any);
+        promiseHandler(controller, promise, response, undefined, next);
+      } catch (err) {
+        return next(err);
+      }
+    }
+  );
+  
+  // ... more routes
+}
+```
+
+### Using Generated Routes
+
+#### Express
+
+```typescript
+import express from 'express';
+import { RegisterRoutes } from './routes';
+
+const app = express();
+
+app.use(express.json());
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+// Error handler
+app.use((err: any, req: any, res: any, next: any) => {
+  if (err instanceof ValidateError) {
+    return res.status(422).json({
+      message: "Validation Failed",
+      details: err.fields,
+    });
+  }
+  
+  if (err) {
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+  
+  next();
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+
+#### Koa
+
+```typescript
+import Koa from 'koa';
+import bodyParser from 'koa-bodyparser';
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+
+app.use(bodyParser());
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+// Error handler
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    if (err instanceof ValidateError) {
+      ctx.status = 422;
+      ctx.body = {
+        message: "Validation Failed",
+        details: err.fields,
+      };
+    } else {
+      ctx.status = 500;
+      ctx.body = {
+        message: "Internal Server Error",
+      };
+    }
+  }
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+
+#### Hapi
+
+```typescript
+import Hapi from '@hapi/hapi';
+import { RegisterRoutes } from './routes';
+
+const server = Hapi.server({
+  port: 3000,
+  host: 'localhost'
+});
+
+const init = async () => {
+  // Register tsoa routes
+  await RegisterRoutes(server);
+  
+  await server.start();
+  console.log('Server running on %s', server.info.uri);
+};
+
+process.on('unhandledRejection', (err) => {
+  console.log(err);
+  process.exit(1);
+});
+
+init();
+```
+
+## IoC Container Integration
+
+Use dependency injection with InversifyJS or other IoC containers:
+
+### inversify.config.ts
+
+```typescript
+import { Container, inject, injectable } from 'inversify';
+import { buildProviderModule } from 'inversify-binding-decorators';
+import { UserService } from './services/userService';
+import { UserController } from './controllers/userController';
+
+const iocContainer = new Container();
+
+// Bind services
+iocContainer.bind<UserService>('UserService').to(UserService);
+
+// Controllers are bound automatically by tsoa
+
+export { iocContainer };
+```
+
+### Controller with Dependency Injection
+
+```typescript
+import { Controller, Get, Route } from 'tsoa';
+import { inject, injectable } from 'inversify';
+import { UserService } from '../services/userService';
+
+@injectable()
+@Route('users')
+export class UserController extends Controller {
+  constructor(
+    @inject('UserService') private userService: UserService
+  ) {
+    super();
+  }
+  
+  @Get('{userId}')
+  public async getUser(userId: string): Promise<User> {
+    return await this.userService.findById(userId);
+  }
+}
+```
+
+### Configure in tsoa.json
+
+```json
+{
+  "routes": {
+    "iocModule": "./src/inversify.config"
+  }
+}
+```
+
+## Build Script Integration
+
+### package.json
+
+```json
+{
+  "scripts": {
+    "build:routes": "ts-node src/scripts/generate-routes.ts",
+    "build:spec": "ts-node src/scripts/generate-spec.ts",
+    "build:all": "npm run build:routes && npm run build:spec",
+    "prebuild": "npm run build:all",
+    "dev": "npm run build:all && nodemon src/server.ts"
+  }
+}
+```
+
+### scripts/generate-routes.ts
+
+```typescript
+import { generateRoutes } from 'tsoa';
+import { routesConfig } from '../tsoa.config';
+
+(async () => {
+  try {
+    console.log('Generating routes...');
+    await generateRoutes(routesConfig);
+    console.log('✓ Routes generated successfully');
+  } catch (error) {
+    console.error('Failed to generate routes:', error);
+    process.exit(1);
+  }
+})();
+```
+
+### Combined Script
+
+```typescript
+import { generateSpec, generateRoutes } from 'tsoa';
+import { specConfig, routesConfig } from '../tsoa.config';
+
+(async () => {
+  try {
+    console.log('Generating OpenAPI spec and routes...');
+    
+    // Generate spec and capture metadata
+    const metadata = await generateSpec(specConfig);
+    console.log('✓ Spec generated');
+    
+    // Reuse metadata for routes
+    await generateRoutes(routesConfig, undefined, undefined, metadata);
+    console.log('✓ Routes generated');
+    
+    console.log('Build complete!');
+  } catch (error) {
+    console.error('Build failed:', error);
+    process.exit(1);
+  }
+})();
+```
+
+## CLI Alternative
+
+Instead of using the function directly, you can use the tsoa CLI:
+
+```bash
+# Generate routes using tsoa.json configuration
+tsoa routes
+
+# Generate routes with custom config file
+tsoa routes -c ./custom-tsoa.json
+
+# Generate both spec and routes
+tsoa spec-and-routes
+```
+
+## Common Issues
+
+### Missing Middleware Configuration
+
+```typescript
+// Error: middleware is required
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express' // Must specify: 'express', 'koa', or 'hapi'
+};
+```
+
+### Controller Discovery
+
+If controllers aren't being discovered, specify `controllerPathGlobs`:
+
+```typescript
+const config = {
+  entryFile: './src/app.ts',
+  routesDir: './src',
+  middleware: 'express',
+  controllerPathGlobs: [
+    './src/controllers/**/*.ts',
+    './src/modules/**/controllers/*.ts'
+  ]
+};
+```
+
+### TypeScript Compilation
+
+Make sure to compile the generated routes file:
+
+```bash
+tsc
+```
+
+Or import it directly in development:
+
+```typescript
+import { RegisterRoutes } from './routes'; // TypeScript will compile on the fly
+```
+
+## See Also
+
+- [generateSpec](/api/functions/generate-spec)
+- [RoutesConfig Interface](/api/interfaces/routes-config)
+- [Config Interface](/api/interfaces/config)

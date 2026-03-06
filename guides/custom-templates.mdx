@@ -1,0 +1,557 @@
+---
+title: Custom Templates
+description: Customize route generation with your own Handlebars templates
+---
+
+tsoa uses Handlebars templates to generate route files. You can customize these templates to fit your specific needs, add custom logic, or integrate with your framework in unique ways.
+
+## Understanding Templates
+
+tsoa generates route files using Handlebars templates that are framework-specific:
+
+- **Express**: `express.hbs`
+- **Koa**: `koa.hbs`
+- **Hapi**: `hapi.hbs`
+
+These templates receive metadata about your controllers, routes, and models to generate the registration code.
+
+## Template Context
+
+The template context includes:
+
+```typescript
+interface TemplateContext {
+  controllers: Controller[];      // All controllers
+  models: Models;                 // Type definitions
+  useSecurity: boolean;           // Whether any route uses auth
+  useFileUploads: boolean;        // Whether any route uploads files
+  authenticationModule?: string;  // Path to auth module
+  iocModule?: string;            // Path to IoC module
+  esm: boolean;                  // Using ES modules
+  minimalSwaggerConfig: object;  // OpenAPI config subset
+  multerOpts?: object;           // Multer configuration
+}
+
+interface Controller {
+  name: string;                   // Controller class name
+  modulePath: string;             // Import path
+  actions: Action[];              // Controller methods
+}
+
+interface Action {
+  name: string;                   // Method name
+  method: string;                 // HTTP method (get, post, etc.)
+  fullPath: string;               // Complete route path
+  parameters: Record<string, ParameterSchema>;
+  security: Security[];           // Auth requirements
+  successStatus: number;          // Success status code
+  uploadFile: boolean;           // Has file upload
+  uploadFileName: UploadField[]; // File field details
+}
+```
+
+## Creating Custom Templates
+
+<Steps>
+
+<Step title="Create Template Directory">
+
+Create a directory for your custom templates:
+
+```bash
+mkdir -p templates
+```
+
+</Step>
+
+<Step title="Copy Base Template">
+
+Copy the default template as a starting point:
+
+```bash
+# For Express
+cp node_modules/tsoa/dist/routeGeneration/templates/express.hbs templates/
+
+# For Koa
+cp node_modules/tsoa/dist/routeGeneration/templates/koa.hbs templates/
+
+# For Hapi
+cp node_modules/tsoa/dist/routeGeneration/templates/hapi.hbs templates/
+```
+
+</Step>
+
+<Step title="Configure tsoa">
+
+Point tsoa to your custom template:
+
+```json tsoa.json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "express",
+    "routesFileName": "routes.ts",
+    "template": "templates/express.hbs"
+  }
+}
+```
+
+</Step>
+
+<Step title="Customize Template">
+
+Modify the template to add your custom logic.
+
+</Step>
+
+</Steps>
+
+## Common Customizations
+
+### Add Custom Imports
+
+Add your own imports at the top:
+
+```handlebars
+/* tslint:disable */
+/* eslint-disable */
+// WARNING: This file was auto-generated with tsoa.
+import type { TsoaRoute } from '@tsoa/runtime';
+import { fetchMiddlewares, ExpressTemplateService } from '@tsoa/runtime';
+
+// Custom imports
+import { logger } from './utils/logger';
+import { metrics } from './utils/metrics';
+import { CustomError } from './errors';
+
+{{#each controllers}}
+import { {{name}} } from '{{modulePath}}';
+{{/each}}
+```
+
+### Add Request Logging
+
+Log every request:
+
+```handlebars
+{{#each controllers}}
+{{#each actions}}
+    app.{{method}}('{{fullPath}}',
+        {{#if security.length}}
+        authenticateMiddleware({{json security}}),
+        {{/if}}
+        ...(fetchMiddlewares<RequestHandler>({{../name}})),
+        ...(fetchMiddlewares<RequestHandler>({{../name}}.prototype.{{name}})),
+
+        async function {{../name}}_{{name}}(request: ExRequest, response: ExResponse, next: any) {
+            // Custom logging
+            logger.info('Request', {
+                controller: '{{../name}}',
+                action: '{{name}}',
+                method: '{{method}}',
+                path: '{{fullPath}}',
+                ip: request.ip
+            });
+
+            const startTime = Date.now();
+            
+            try {
+                // ... existing validation and controller logic ...
+                
+                // Log success
+                const duration = Date.now() - startTime;
+                metrics.recordRequest('{{../name}}_{{name}}', duration, 'success');
+            } catch (err) {
+                const duration = Date.now() - startTime;
+                metrics.recordRequest('{{../name}}_{{name}}', duration, 'error');
+                return next(err);
+            }
+        });
+{{/each}}
+{{/each}}
+```
+
+### Add Rate Limiting
+
+Apply rate limiting to specific routes:
+
+```handlebars
+import rateLimit from 'express-rate-limit';
+
+const rateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100
+});
+
+{{#each controllers}}
+{{#each actions}}
+    app.{{method}}('{{fullPath}}',
+        // Add rate limiting to POST/PUT/DELETE
+        {{#if (or (eq method 'post') (eq method 'put') (eq method 'delete'))}}
+        rateLimiter,
+        {{/if}}
+        // ... rest of middleware ...
+    );
+{{/each}}
+{{/each}}
+```
+
+### Custom Error Handling
+
+Add custom error handling logic:
+
+```handlebars
+async function {{../name}}_{{name}}(request: ExRequest, response: ExResponse, next: any) {
+    let validatedArgs: any[] = [];
+    try {
+        validatedArgs = templateService.getValidatedArgs({
+            args: args{{../name}}_{{name}},
+            request,
+            response
+        });
+
+        const controller = new {{../name}}();
+        const result = await templateService.apiHandler({
+            methodName: '{{name}}',
+            controller,
+            response,
+            next,
+            validatedArgs,
+            successStatus: {{successStatus}},
+        });
+        
+        return result;
+    } catch (err) {
+        // Custom error transformation
+        if (err instanceof CustomError) {
+            const status = err.statusCode || 500;
+            return response.status(status).json({
+                error: err.message,
+                code: err.code,
+                timestamp: new Date().toISOString()
+            });
+        }
+        return next(err);
+    }
+}
+```
+
+### Add Request Tracing
+
+Add distributed tracing:
+
+```handlebars
+import { trace } from './utils/tracing';
+
+async function {{../name}}_{{name}}(request: ExRequest, response: ExResponse, next: any) {
+    const span = trace.startSpan('{{../name}}.{{name}}', {
+        attributes: {
+            'http.method': '{{method}}',
+            'http.route': '{{fullPath}}',
+            'http.user_agent': request.headers['user-agent']
+        }
+    });
+
+    try {
+        // ... existing logic ...
+        span.setStatus({ code: 0 }); // Success
+    } catch (err) {
+        span.setStatus({ code: 2, message: err.message }); // Error
+        throw err;
+    } finally {
+        span.end();
+    }
+}
+```
+
+## Handlebars Helpers
+
+Add custom Handlebars helpers for complex logic:
+
+```javascript helpers.js
+const Handlebars = require('handlebars');
+
+// Check if method is POST, PUT, or DELETE
+Handlebars.registerHelper('isMutation', function(method) {
+    return ['post', 'put', 'delete', 'patch'].includes(method.toLowerCase());
+});
+
+// Check if route needs authentication
+Handlebars.registerHelper('needsAuth', function(security) {
+    return security && security.length > 0;
+});
+
+// Convert path to regex pattern
+Handlebars.registerHelper('toRegex', function(path) {
+    return path.replace(/{([^}]+)}/g, ':$1');
+});
+
+// Uppercase first letter
+Handlebars.registerHelper('capitalize', function(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+});
+```
+
+Use in template:
+
+```handlebars
+{{#if (isMutation method)}}
+    // This is a mutation operation
+    validateCSRF(request);
+{{/if}}
+
+{{#if (needsAuth security)}}
+    // This route needs authentication
+{{/if}}
+```
+
+## Framework-Specific Customizations
+
+### Express: Add CORS Headers
+
+```handlebars
+app.{{method}}('{{fullPath}}',
+    (req, res, next) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+        next();
+    },
+    // ... rest of middleware ...
+);
+```
+
+### Koa: Add Response Time
+
+```handlebars
+router.{{method}}('{{fullPath}}',
+    async (context: Context, next: Next) => {
+        const start = Date.now();
+        await next();
+        const ms = Date.now() - start;
+        context.set('X-Response-Time', `${ms}ms`);
+    },
+    // ... rest of middleware ...
+);
+```
+
+### Hapi: Add Custom Validation
+
+```handlebars
+server.route({
+    method: '{{method}}',
+    path: '{{fullPath}}',
+    options: {
+        pre: [
+            // Custom pre-handler
+            {
+                method: async (request, h) => {
+                    // Custom validation logic
+                    return h.continue;
+                }
+            },
+            // ... existing pre-handlers ...
+        ],
+        handler: {{#if ../../iocModule}}async {{/if}}function {{../name}}_{{name}}(request: Request, h: ResponseToolkit) {
+            // ... handler logic ...
+        }
+    }
+});
+```
+
+## Advanced Patterns
+
+### Conditional Middleware
+
+Apply middleware based on route metadata:
+
+```handlebars
+{{#each controllers}}
+{{#each actions}}
+    const middlewares_{{../name}}_{{name}} = [
+        {{#if security.length}}
+        authenticateMiddleware({{json security}}),
+        {{/if}}
+        {{#if (contains ../name "Admin")}}
+        adminOnlyMiddleware,
+        {{/if}}
+        {{#if uploadFile}}
+        upload.fields([{{#each uploadFileName}}{name: '{{name}}'}{{#unless @last}},{{/unless}}{{/each}}]),
+        {{/if}}
+        ...fetchMiddlewares<RequestHandler>({{../name}}),
+        ...fetchMiddlewares<RequestHandler>({{../name}}.prototype.{{name}})
+    ];
+    
+    app.{{method}}('{{fullPath}}', ...middlewares_{{../name}}_{{name}}, handler_{{../name}}_{{name}});
+{{/each}}
+{{/each}}
+```
+
+### Route Versioning
+
+```handlebars
+const API_VERSION = process.env.API_VERSION || 'v1';
+
+{{#each controllers}}
+{{#each actions}}
+    app.{{method}}(`/api/${API_VERSION}{{fullPath}}`,
+        // ... middleware and handler ...
+    );
+{{/each}}
+{{/each}}
+```
+
+### Generate Route Documentation
+
+```handlebars
+// Auto-generated route documentation
+export const routes = [
+    {{#each controllers}}
+    {{#each actions}}
+    {
+        controller: '{{../name}}',
+        method: '{{name}}',
+        httpMethod: '{{method}}',
+        path: '{{fullPath}}',
+        authenticated: {{#if security.length}}true{{else}}false{{/if}},
+        fileUpload: {{uploadFile}},
+        description: '{{description}}'
+    },
+    {{/each}}
+    {{/each}}
+];
+```
+
+## Testing Custom Templates
+
+### Validate Generated Code
+
+```bash
+# Generate routes
+npm run tsoa routes
+
+# Check for TypeScript errors
+tsc --noEmit
+
+# Run tests
+npm test
+```
+
+### Template Debugging
+
+Add debug output to see template context:
+
+```handlebars
+{{!-- Debug: Output all controllers --}}
+{{log controllers}}
+
+{{!-- Debug: Check a specific value --}}
+{{#if useSecurity}}
+    {{log "Security is enabled"}}
+{{/if}}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Changes Minimal">
+    Only customize what's necessary. The default templates are well-tested and maintained.
+  </Accordion>
+  
+  <Accordion title="Version Control Templates">
+    Keep your custom templates in version control and document changes.
+  </Accordion>
+  
+  <Accordion title="Test Thoroughly">
+    Test all route scenarios after template changes: authentication, file uploads, validation, etc.
+  </Accordion>
+  
+  <Accordion title="Stay Compatible">
+    When upgrading tsoa, check if template structure has changed and update your customizations.
+  </Accordion>
+  
+  <Accordion title="Use Comments">
+    Document why you made specific customizations in template comments.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Template Syntax Errors
+
+If routes generation fails:
+
+1. Check Handlebars syntax
+2. Verify all `{{#if}}` blocks are closed with `{{/if}}`
+3. Ensure `{{#each}}` loops are closed with `{{/each}}`
+4. Validate JSON output with `{{json value}}`
+
+### TypeScript Errors
+
+If generated code has TypeScript errors:
+
+1. Check imports are correct
+2. Verify type annotations
+3. Ensure proper indentation
+4. Test with a simple route first
+
+### Runtime Errors
+
+If routes fail at runtime:
+
+1. Verify middleware order
+2. Check async/await usage
+3. Validate error handling
+4. Test with curl or Postman
+
+## Examples
+
+### Complete Custom Express Template
+
+A minimal custom template:
+
+```handlebars templates/express.hbs
+/* tslint:disable */
+/* eslint-disable */
+import type { RequestHandler, Router } from 'express';
+import { ExpressTemplateService } from '@tsoa/runtime';
+{{#each controllers}}
+import { {{name}} } from '{{modulePath}}';
+{{/each}}
+
+const models: any = {{{json models}}};
+const templateService = new ExpressTemplateService(models, {{{json minimalSwaggerConfig}}});
+
+export function RegisterRoutes(app: Router) {
+    {{#each controllers}}
+    {{#each actions}}
+    app.{{method}}('{{fullPath}}', async (req, res, next) => {
+        try {
+            const args = templateService.getValidatedArgs({
+                args: {{{json parameters}}},
+                request: req,
+                response: res
+            });
+            
+            const controller = new {{../name}}();
+            const result = await (controller as any).{{name}}(...Object.values(args));
+            
+            res.status({{successStatus}}).json(result);
+        } catch (err) {
+            next(err);
+        }
+    });
+    {{/each}}
+    {{/each}}
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAPI Versions" icon="code-branch" href="/guides/openapi-versions">
+    Learn about OpenAPI specification versions
+  </Card>
+  <Card title="Advanced Configuration" icon="gear" href="/cli/configuration">
+    Explore advanced tsoa configuration
+  </Card>
+</CardGroup>

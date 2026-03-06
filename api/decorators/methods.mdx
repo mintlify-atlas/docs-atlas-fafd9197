@@ -1,0 +1,241 @@
+---
+title: "HTTP Method Decorators"
+description: "Define HTTP methods for controller endpoints"
+---
+
+## Overview
+
+HTTP method decorators define the HTTP verb and optional path for controller methods. These decorators map your controller methods to REST API endpoints.
+
+## Available Methods
+
+tsoa supports all standard HTTP methods:
+
+- `@Get(value?: string)`
+- `@Post(value?: string)`
+- `@Put(value?: string)`
+- `@Patch(value?: string)`
+- `@Delete(value?: string)`
+- `@Head(value?: string)`
+- `@Options(value?: string)`
+
+## Signature
+
+```typescript
+function Get(value?: string): MethodDecorator
+function Post(value?: string): MethodDecorator
+function Put(value?: string): MethodDecorator
+function Patch(value?: string): MethodDecorator
+function Delete(value?: string): MethodDecorator
+function Head(value?: string): MethodDecorator
+function Options(value?: string): MethodDecorator
+```
+
+<ParamField path="value" type="string" optional>
+  The path segment for this endpoint, relative to the controller's base route.
+  
+  Can include path parameters using `{paramName}` or `:paramName` syntax.
+  
+  If omitted, the endpoint will be accessible at the controller's base route.
+</ParamField>
+
+## Usage
+
+### @Get - Retrieve Resources
+
+```typescript
+import { Controller, Get, Route, Path, Query } from 'tsoa';
+
+@Route('users')
+export class UserController extends Controller {
+  // GET /users
+  @Get()
+  public async listUsers(
+    @Query() limit?: number,
+    @Query() offset?: number
+  ): Promise<User[]> {
+    return await userService.findAll(limit, offset);
+  }
+  
+  // GET /users/{userId}
+  @Get('{userId}')
+  public async getUser(@Path() userId: string): Promise<User> {
+    return await userService.findById(userId);
+  }
+  
+  // GET /users/{userId}/posts
+  @Get('{userId}/posts')
+  public async getUserPosts(@Path() userId: string): Promise<Post[]> {
+    return await postService.findByUserId(userId);
+  }
+}
+```
+
+### @Post - Create Resources
+
+```typescript
+import { Controller, Post, Route, Body } from 'tsoa';
+
+@Route('posts')
+export class PostController extends Controller {
+  // POST /posts
+  @Post()
+  public async createPost(
+    @Body() body: CreatePostRequest
+  ): Promise<Post> {
+    const post = await postService.create(body);
+    this.setStatus(201); // Set 201 Created status
+    return post;
+  }
+  
+  // POST /posts/{postId}/publish
+  @Post('{postId}/publish')
+  public async publishPost(@Path() postId: string): Promise<Post> {
+    return await postService.publish(postId);
+  }
+}
+```
+
+### @Put - Replace Resources
+
+```typescript
+import { Controller, Put, Route, Path, Body } from 'tsoa';
+
+@Route('users')
+export class UserController extends Controller {
+  // PUT /users/{userId}
+  @Put('{userId}')
+  public async replaceUser(
+    @Path() userId: string,
+    @Body() body: User
+  ): Promise<User> {
+    return await userService.replace(userId, body);
+  }
+}
+```
+
+### @Patch - Update Resources
+
+```typescript
+import { Controller, Patch, Route, Path, Body } from 'tsoa';
+
+@Route('users')
+export class UserController extends Controller {
+  // PATCH /users/{userId}
+  @Patch('{userId}')
+  public async updateUser(
+    @Path() userId: string,
+    @Body() body: Partial<User>
+  ): Promise<User> {
+    return await userService.update(userId, body);
+  }
+}
+```
+
+### @Delete - Remove Resources
+
+```typescript
+import { Controller, Delete, Route, Path } from 'tsoa';
+
+@Route('users')
+export class UserController extends Controller {
+  // DELETE /users/{userId}
+  @Delete('{userId}')
+  public async deleteUser(@Path() userId: string): Promise<void> {
+    await userService.delete(userId);
+    this.setStatus(204); // Set 204 No Content status
+  }
+}
+```
+
+### @Head - Get Headers Only
+
+```typescript
+import { Controller, Head, Route, Path } from 'tsoa';
+
+@Route('files')
+export class FileController extends Controller {
+  // HEAD /files/{fileId}
+  @Head('{fileId}')
+  public async checkFile(@Path() fileId: string): Promise<void> {
+    const exists = await fileService.exists(fileId);
+    if (!exists) {
+      this.setStatus(404);
+    }
+  }
+}
+```
+
+### @Options - Get Allowed Methods
+
+```typescript
+import { Controller, Options, Route } from 'tsoa';
+
+@Route('api')
+export class ApiController extends Controller {
+  // OPTIONS /api
+  @Options()
+  public async getOptions(): Promise<void> {
+    this.setHeader('Allow', 'GET, POST, PUT, DELETE, OPTIONS');
+  }
+}
+```
+
+## Path Parameters
+
+### Curly Brace Syntax
+
+```typescript
+@Get('{userId}/posts/{postId}')
+public async getPost(
+  @Path() userId: string,
+  @Path() postId: string
+): Promise<Post> {
+  return await postService.findOne(userId, postId);
+}
+```
+
+### Colon Syntax
+
+```typescript
+@Get(':userId/posts/:postId')
+public async getPost(
+  @Path() userId: string,
+  @Path() postId: string
+): Promise<Post> {
+  return await postService.findOne(userId, postId);
+}
+```
+
+## Best Practices
+
+### RESTful Resource Design
+
+```typescript
+@Route('articles')
+export class ArticleController extends Controller {
+  @Get()                              // List: GET /articles
+  @Get('{id}')                        // Read: GET /articles/{id}
+  @Post()                             // Create: POST /articles
+  @Put('{id}')                        // Replace: PUT /articles/{id}
+  @Patch('{id}')                      // Update: PATCH /articles/{id}
+  @Delete('{id}')                     // Delete: DELETE /articles/{id}
+}
+```
+
+### Action Routes for Non-CRUD Operations
+
+```typescript
+@Route('orders')
+export class OrderController extends Controller {
+  @Post('{orderId}/cancel')           // POST /orders/{orderId}/cancel
+  @Post('{orderId}/refund')           // POST /orders/{orderId}/refund
+  @Get('{orderId}/invoice')           // GET /orders/{orderId}/invoice
+}
+```
+
+## See Also
+
+- [@Route Decorator](/api/decorators/route)
+- [Parameter Decorators](/api/decorators/parameters)
+- [Response Decorators](/api/decorators/response)

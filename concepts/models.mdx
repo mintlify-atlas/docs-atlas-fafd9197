@@ -1,0 +1,835 @@
+---
+title: 'Models'
+description: 'Define type-safe data structures with TypeScript interfaces and types'
+icon: 'cube'
+---
+
+## Overview
+
+Models in tsoa are TypeScript interfaces, types, or classes that define the structure of your API's request and response data. tsoa uses these definitions to generate OpenAPI schemas and perform runtime validation.
+
+<Note>
+  tsoa automatically generates OpenAPI schemas from your TypeScript types, ensuring your documentation always matches your code.
+</Note>
+
+## Interfaces
+
+The most common way to define models is with TypeScript interfaces:
+
+```typescript
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  createdAt: Date;
+  isActive: boolean;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  name: string;
+  password: string;
+}
+
+export interface UpdateUserRequest {
+  email?: string;
+  name?: string;
+}
+```
+
+**Using in controllers:**
+
+```typescript
+import { Route, Get, Post, Put, Body, Path } from '@tsoa/runtime';
+
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+
+  @Post()
+  public async createUser(
+    @Body() request: CreateUserRequest
+  ): Promise<User> {
+    return await userService.create(request);
+  }
+
+  @Put('{userId}')
+  public async updateUser(
+    @Path() userId: number,
+    @Body() request: UpdateUserRequest
+  ): Promise<User> {
+    return await userService.update(userId, request);
+  }
+}
+```
+
+## Property Types
+
+tsoa supports all TypeScript primitive and complex types:
+
+<Tabs>
+  <Tab title="Primitives">
+    ```typescript
+    export interface PrimitiveTypes {
+      stringValue: string;
+      numberValue: number;
+      boolValue: boolean;
+      dateValue: Date;
+      anyValue: any;           // Use sparingly
+      unknownValue: unknown;   // Prefer over 'any'
+      undefinedValue: undefined;
+    }
+    ```
+  </Tab>
+  <Tab title="Arrays">
+    ```typescript
+    export interface ArrayTypes {
+      stringArray: string[];
+      numberArray: number[];
+      modelArray: User[];
+      nestedArray: string[][];
+      readonlyArray: readonly number[];
+    }
+    ```
+  </Tab>
+  <Tab title="Objects">
+    ```typescript
+    export interface ObjectTypes {
+      // Nested object with defined properties
+      address: {
+        street: string;
+        city: string;
+        zipCode: string;
+      };
+      
+      // Generic object
+      metadata: object;
+      
+      // Object with dynamic keys
+      settings: { [key: string]: string };
+      
+      // Record type
+      preferences: Record<string, boolean>;
+    }
+    ```
+  </Tab>
+  <Tab title="Unions & Literals">
+    ```typescript
+    export interface UnionTypes {
+      // Union of primitives
+      status: 'active' | 'inactive' | 'pending';
+      
+      // Union of types
+      value: string | number;
+      
+      // String literals
+      role: 'admin' | 'user' | 'guest';
+      
+      // Number literals
+      priority: 1 | 2 | 3;
+      
+      // Nullable
+      optionalField: string | null;
+      optionalOrUndefined: string | undefined;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Optional Properties
+
+Mark properties as optional with `?`:
+
+```typescript
+export interface User {
+  id: number;              // Required
+  email: string;           // Required
+  name: string;            // Required
+  phoneNumber?: string;    // Optional
+  bio?: string;            // Optional
+  avatar?: string;         // Optional
+}
+
+// Alternative: undefined union
+export interface UserAlt {
+  id: number;
+  email: string;
+  name: string;
+  phoneNumber: string | undefined;
+}
+```
+
+## Nested Models
+
+Models can reference other models:
+
+```typescript
+export interface Address {
+  street: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+}
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  address: Address;              // Nested model
+  billingAddress?: Address;      // Optional nested model
+}
+
+export interface Order {
+  id: number;
+  user: User;                    // References User model
+  items: OrderItem[];            // Array of nested models
+  shippingAddress: Address;
+  createdAt: Date;
+}
+
+export interface OrderItem {
+  productId: number;
+  quantity: number;
+  price: number;
+}
+```
+
+## Enums
+
+Use TypeScript enums for fixed sets of values:
+
+```typescript
+export enum UserRole {
+  Admin = 'admin',
+  Moderator = 'moderator',
+  User = 'user',
+  Guest = 'guest'
+}
+
+export enum OrderStatus {
+  Pending = 'pending',
+  Processing = 'processing',
+  Shipped = 'shipped',
+  Delivered = 'delivered',
+  Cancelled = 'cancelled'
+}
+
+export interface User {
+  id: number;
+  name: string;
+  role: UserRole;
+}
+
+export interface Order {
+  id: number;
+  status: OrderStatus;
+  items: OrderItem[];
+}
+```
+
+**Numeric enums:**
+
+```typescript
+export enum Priority {
+  Low = 1,
+  Medium = 2,
+  High = 3,
+  Critical = 4
+}
+
+export interface Task {
+  id: number;
+  title: string;
+  priority: Priority;
+}
+```
+
+## Generic Types
+
+Create reusable generic models:
+
+```typescript
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface GenericRequest<T> {
+  value: T;
+  metadata?: Record<string, any>;
+}
+
+// Usage in controllers:
+@Route('users')
+export class UserController {
+  @Get()
+  public async getUsers(): Promise<PaginatedResponse<User>> {
+    return await userService.getPaginated();
+  }
+
+  @Get('{userId}')
+  public async getUser(
+    @Path() userId: number
+  ): Promise<ApiResponse<User>> {
+    const user = await userService.getById(userId);
+    return {
+      success: true,
+      data: user
+    };
+  }
+
+  @Post()
+  public async createUser(
+    @Body() request: GenericRequest<User>
+  ): Promise<ApiResponse<User>> {
+    const created = await userService.create(request.value);
+    return {
+      success: true,
+      data: created,
+      message: 'User created successfully'
+    };
+  }
+}
+```
+
+## Utility Types
+
+Leverage TypeScript utility types:
+
+<Tabs>
+  <Tab title="Partial">
+    ```typescript
+    export interface User {
+      id: number;
+      name: string;
+      email: string;
+      phone: string;
+    }
+
+    @Route('users')
+    export class UserController {
+      // All properties become optional
+      @Patch('{userId}')
+      public async updateUser(
+        @Path() userId: number,
+        @Body() updates: Partial<User>
+      ): Promise<User> {
+        return await userService.update(userId, updates);
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Pick">
+    ```typescript
+    export interface User {
+      id: number;
+      name: string;
+      email: string;
+      password: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }
+
+    // Only include specific properties
+    export type UserPublic = Pick<User, 'id' | 'name' | 'email'>;
+
+    @Route('users')
+    export class UserController {
+      @Get()
+      public async getUsers(): Promise<UserPublic[]> {
+        return await userService.getAllPublic();
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Omit">
+    ```typescript
+    export interface User {
+      id: number;
+      name: string;
+      email: string;
+      password: string;
+      secretKey: string;
+    }
+
+    // Exclude specific properties
+    export type UserWithoutSecrets = Omit<User, 'password' | 'secretKey'>;
+
+    @Route('users')
+    export class UserController {
+      @Get('{userId}')
+      public async getUser(
+        @Path() userId: number
+      ): Promise<UserWithoutSecrets> {
+        return await userService.getPublic(userId);
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Record">
+    ```typescript
+    // Key-value pairs with typed values
+    export interface Settings {
+      userPreferences: Record<string, boolean>;
+      featureFlags: Record<string, string>;
+      metadata: Record<string, any>;
+    }
+
+    // Union as keys
+    export type StatusCounts = Record<
+      'active' | 'inactive' | 'pending',
+      number
+    >;
+
+    @Route('stats')
+    export class StatsController {
+      @Get('status-counts')
+      public async getStatusCounts(): Promise<StatusCounts> {
+        return await statsService.getStatusCounts();
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Readonly">
+    ```typescript
+    export interface User {
+      id: number;
+      email: string;
+      createdAt: Date;
+    }
+
+    // All properties become readonly
+    export type ImmutableUser = Readonly<User>;
+
+    @Route('users')
+    export class UserController {
+      @Get('{userId}')
+      public async getUser(
+        @Path() userId: number
+      ): Promise<Readonly<User>> {
+        return await userService.getById(userId);
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Type Aliases
+
+Create type aliases for complex types:
+
+```typescript
+// Simple alias
+export type UserId = number;
+export type Email = string;
+export type Timestamp = Date;
+
+// Union types
+export type Status = 'active' | 'inactive' | 'pending';
+export type Role = 'admin' | 'user' | 'guest';
+
+// Complex types
+export type StringOrNumber = string | number;
+export type Nullable<T> = T | null;
+export type Optional<T> = T | undefined;
+
+// Intersection types
+export type WithTimestamps = {
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type User = {
+  id: number;
+  name: string;
+  email: string;
+} & WithTimestamps;
+
+// Usage
+export interface ApiResponse {
+  userId: UserId;
+  email: Email;
+  status: Status;
+  lastLogin: Timestamp;
+}
+```
+
+## Classes as Models
+
+Use classes when you need methods or computed properties:
+
+```typescript
+export class User {
+  public id: number;
+  public firstName: string;
+  public lastName: string;
+  public email: string;
+  public birthDate: Date;
+
+  constructor(
+    id: number,
+    firstName: string,
+    lastName: string,
+    email: string,
+    birthDate: Date
+  ) {
+    this.id = id;
+    this.firstName = firstName;
+    this.lastName = lastName;
+    this.email = email;
+    this.birthDate = birthDate;
+  }
+
+  public get fullName(): string {
+    return `${this.firstName} ${this.lastName}`;
+  }
+
+  public get age(): number {
+    const today = new Date();
+    const age = today.getFullYear() - this.birthDate.getFullYear();
+    return age;
+  }
+}
+
+@Route('users')
+export class UserController {
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return await userService.getById(userId);
+  }
+}
+```
+
+<Note>
+  Only public properties are included in the OpenAPI schema. Methods and private properties are ignored.
+</Note>
+
+## Documentation with JSDoc
+
+Add descriptions and examples using JSDoc comments:
+
+```typescript
+/**
+ * Represents a user in the system
+ * @example
+ * {
+ *   "id": 1,
+ *   "email": "user@example.com",
+ *   "name": "John Doe",
+ *   "role": "user",
+ *   "isActive": true
+ * }
+ */
+export interface User {
+  /**
+   * Unique user identifier
+   */
+  id: number;
+  
+  /**
+   * User's email address
+   * @format email
+   */
+  email: string;
+  
+  /**
+   * User's full name
+   * @minLength 2
+   * @maxLength 100
+   */
+  name: string;
+  
+  /**
+   * User's role in the system
+   */
+  role: 'admin' | 'user' | 'guest';
+  
+  /**
+   * Whether the user account is active
+   * @default true
+   */
+  isActive: boolean;
+  
+  /**
+   * User's phone number
+   * @pattern ^\+?[1-9]\d{1,14}$
+   */
+  phoneNumber?: string;
+}
+```
+
+## Multiple Examples
+
+Provide multiple examples with the `@Example` decorator:
+
+```typescript
+import { Example } from '@tsoa/runtime';
+
+export interface Product {
+  id: number;
+  name: string;
+  price: number;
+  category: string;
+  inStock: boolean;
+}
+
+@Route('products')
+export class ProductController {
+  @Get('{productId}')
+  @Example<Product>({
+    id: 1,
+    name: 'Laptop',
+    price: 999.99,
+    category: 'Electronics',
+    inStock: true
+  }, 'Laptop Example')
+  @Example<Product>({
+    id: 2,
+    name: 'Mouse',
+    price: 29.99,
+    category: 'Accessories',
+    inStock: false
+  }, 'Out of Stock Example')
+  public async getProduct(
+    @Path() productId: number
+  ): Promise<Product> {
+    return await productService.getById(productId);
+  }
+}
+```
+
+## Property Examples
+
+Add examples to individual properties:
+
+```typescript
+export interface User {
+  id: number;
+  
+  /**
+   * @example "user@example.com"
+   */
+  email: string;
+  
+  /**
+   * @example "password123"
+   * @format password
+   */
+  password: string;
+  
+  /**
+   * @example "John Doe"
+   */
+  name: string;
+}
+```
+
+## Deprecated Models
+
+Mark models or properties as deprecated:
+
+```typescript
+import { Deprecated } from '@tsoa/runtime';
+
+/**
+ * @deprecated Use UserV2 instead
+ */
+export interface UserV1 {
+  id: number;
+  username: string;
+}
+
+export interface User {
+  id: number;
+  email: string;
+  
+  /**
+   * @deprecated Use firstName and lastName instead
+   */
+  fullName?: string;
+  
+  firstName: string;
+  lastName: string;
+}
+```
+
+## Extension Properties
+
+Add custom OpenAPI extensions:
+
+```typescript
+import { Extension } from '@tsoa/runtime';
+
+export interface User {
+  id: number;
+  email: string;
+  
+  /**
+   * @extension {"x-internal": true}
+   * @extension {"x-sensitive": true}
+   */
+  ssn?: string;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Interfaces Over Classes">
+    Prefer interfaces unless you need class features:
+    
+    ```typescript
+    // Good: Simple interface
+    export interface User {
+      id: number;
+      name: string;
+      email: string;
+    }
+
+    // Only use classes when needed:
+    export class UserWithMethods {
+      constructor(
+        public id: number,
+        public name: string,
+        public email: string
+      ) {}
+
+      public getDisplayName(): string {
+        return this.name.toUpperCase();
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Separate Request and Response Models">
+    Use different models for requests and responses:
+    
+    ```typescript
+    // Response model (includes all fields)
+    export interface User {
+      id: number;
+      email: string;
+      name: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }
+
+    // Create request (no id, timestamps)
+    export interface CreateUserRequest {
+      email: string;
+      name: string;
+      password: string;
+    }
+
+    // Update request (all optional)
+    export interface UpdateUserRequest {
+      email?: string;
+      name?: string;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Type Aliases for Clarity">
+    Create aliases for commonly used types:
+    
+    ```typescript
+    export type UserId = number;
+    export type Email = string;
+    export type Timestamp = Date;
+    export type ISO8601 = string;
+
+    export interface User {
+      id: UserId;
+      email: Email;
+      createdAt: Timestamp;
+      lastLogin: ISO8601;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Document Complex Types">
+    Add JSDoc comments for complex models:
+    
+    ```typescript
+    /**
+     * Represents a paginated list of items
+     * @template T The type of items in the list
+     */
+    export interface PaginatedResponse<T> {
+      /**
+       * Array of items for the current page
+       */
+      items: T[];
+      
+      /**
+       * Total number of items across all pages
+       */
+      total: number;
+      
+      /**
+       * Current page number (1-indexed)
+       */
+      page: number;
+      
+      /**
+       * Number of items per page
+       */
+      pageSize: number;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Avoid 'any' Type">
+    Use 'unknown' or proper types instead of 'any':
+    
+    ```typescript
+    // Avoid:
+    export interface BadModel {
+      data: any;
+      metadata: any;
+    }
+
+    // Better:
+    export interface GoodModel {
+      data: unknown;  // Forces type checking
+      metadata: Record<string, string>;
+    }
+
+    // Best:
+    export interface BestModel {
+      data: User | Product | Order;
+      metadata: Metadata;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="shield-check" href="/concepts/validation">
+    Add validation rules to your models
+  </Card>
+  <Card title="Controllers" icon="diagram-project" href="/concepts/controllers">
+    Use models in your API endpoints
+  </Card>
+  <Card title="Responses" icon="reply" href="/concepts/responses">
+    Define response types and status codes
+  </Card>
+  <Card title="Decorators" icon="at" href="/concepts/decorators">
+    Learn about parameter decorators
+  </Card>
+</CardGroup>

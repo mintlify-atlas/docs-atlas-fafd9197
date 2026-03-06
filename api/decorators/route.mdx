@@ -1,0 +1,126 @@
+---
+title: "@Route"
+description: "Define a controller's base route path"
+---
+
+## Overview
+
+The `@Route` decorator is used at the class level to define the base path for all routes within a controller. This decorator is required for all controllers that should be included in the OpenAPI specification and route generation.
+
+## Signature
+
+```typescript
+function Route(name?: string): ClassDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The base path segment for this controller. All method routes will be prefixed with this path.
+  
+  If not provided, the controller class name will be used as the route path.
+</ParamField>
+
+## Usage
+
+### Basic Route
+
+```typescript
+import { Controller, Get, Route } from 'tsoa';
+
+@Route('users')
+export class UserController extends Controller {
+  @Get('{userId}')
+  public async getUser(userId: string): Promise<User> {
+    // Accessible at: GET /users/{userId}
+    return await userService.findById(userId);
+  }
+}
+```
+
+### Nested Route Paths
+
+```typescript
+@Route('api/v1/products')
+export class ProductController extends Controller {
+  @Get()
+  public async listProducts(): Promise<Product[]> {
+    // Accessible at: GET /api/v1/products
+    return await productService.findAll();
+  }
+  
+  @Get('{productId}/reviews')
+  public async getProductReviews(productId: string): Promise<Review[]> {
+    // Accessible at: GET /api/v1/products/{productId}/reviews
+    return await reviewService.findByProductId(productId);
+  }
+}
+```
+
+### Without Controller Extension
+
+```typescript
+@Route('posts')
+export class PostController {
+  @Get('{postId}')
+  public async getPost(postId: string): Promise<Post> {
+    // Accessible at: GET /posts/{postId}
+    return await postService.findById(postId);
+  }
+}
+```
+
+## Additional Decorators
+
+### @Hidden
+
+Use `@Hidden` to exclude a controller or method from the generated OpenAPI specification and routes.
+
+```typescript
+function Hidden(): ClassDecorator & MethodDecorator & ParameterDecorator
+```
+
+#### Hide Entire Controller
+
+```typescript
+@Hidden()
+@Route('internal')
+export class InternalController extends Controller {
+  // This entire controller will be hidden from documentation
+  @Get('health')
+  public async healthCheck(): Promise<{ status: string }> {
+    return { status: 'ok' };
+  }
+}
+```
+
+#### Hide Specific Method
+
+```typescript
+@Route('users')
+export class UserController extends Controller {
+  @Get('{userId}')
+  public async getUser(userId: string): Promise<User> {
+    // This endpoint is documented
+    return await userService.findById(userId);
+  }
+  
+  @Hidden()
+  @Get('debug/{userId}')
+  public async debugUser(userId: string): Promise<any> {
+    // This endpoint is hidden from documentation
+    return await userService.getDebugInfo(userId);
+  }
+}
+```
+
+## Notes
+
+- The `@Route` decorator is required for all controllers
+- Route paths should not include leading or trailing slashes
+- Path segments are combined with method paths using `/`
+- Use `@Hidden` to exclude internal or development-only endpoints from documentation
+
+## See Also
+
+- [HTTP Method Decorators](/api/decorators/methods)
+- [Path Parameters](/api/decorators/parameters#path)
+- [Configuration: basePath](/api/interfaces/config#basepath)

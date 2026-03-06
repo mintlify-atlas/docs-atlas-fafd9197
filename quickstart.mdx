@@ -1,80 +1,307 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Build your first tsoa API in minutes"
 ---
 
-## Get started in three steps
+This quickstart guide will walk you through creating a simple REST API with tsoa, from installation to testing your first endpoint.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+- Node.js 18.0.0 or higher
+- npm, yarn, or pnpm
+- Basic TypeScript knowledge
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Step 1: Initialize Your Project
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Create a new project">
+    ```bash
+    mkdir my-tsoa-api
+    cd my-tsoa-api
+    npm init -y
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Install dependencies">
+    <CodeGroup>
+      ```bash npm
+      npm install tsoa express
+      npm install -D typescript @types/node @types/express
+      ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+      ```bash yarn
+      yarn add tsoa express
+      yarn add -D typescript @types/node @types/express
+      ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+      ```bash pnpm
+      pnpm add tsoa express
+      pnpm add -D typescript @types/node @types/express
+      ```
+    </CodeGroup>
+  </Step>
 
-### Step 3: Go live
+  <Step title="Initialize TypeScript">
+    Create a `tsconfig.json` file:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2021",
+        "module": "commonjs",
+        "lib": ["ES2021"],
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true
+      },
+      "include": ["src/**/*"],
+      "exclude": ["node_modules"]
+    }
+    ```
 
-## Next steps
+    <Note>
+      The `experimentalDecorators` and `emitDecoratorMetadata` options are required for tsoa to work properly.
+    </Note>
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Configure tsoa">
+    Create a `tsoa.json` configuration file:
+
+    ```json tsoa.json
+    {
+      "entryFile": "src/server.ts",
+      "noImplicitAdditionalProperties": "throw-on-extras",
+      "spec": {
+        "outputDirectory": "dist",
+        "specVersion": 3
+      },
+      "routes": {
+        "routesDir": "src"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Step 2: Create Your First Controller
+
+Create a simple user controller with CRUD operations:
+
+```typescript src/controllers/userController.ts
+import { Body, Controller, Get, Path, Post, Route, Tags } from 'tsoa';
+
+// Define your data model
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// In-memory storage for demo purposes
+const users: User[] = [
+  { id: 1, name: 'John Doe', email: 'john@example.com' },
+  { id: 2, name: 'Jane Smith', email: 'jane@example.com' }
+];
+
+@Route('users')
+@Tags('Users')
+export class UserController extends Controller {
+  /**
+   * Retrieves all users
+   * @summary Get all users
+   */
+  @Get()
+  public async getUsers(): Promise<User[]> {
+    return users;
+  }
+
+  /**
+   * Retrieves a specific user by ID
+   * @summary Get user by ID
+   * @param userId The user's identifier
+   */
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    const user = users.find(u => u.id === userId);
+    if (!user) {
+      this.setStatus(404);
+      throw new Error('User not found');
+    }
+    return user;
+  }
+
+  /**
+   * Creates a new user
+   * @summary Create a new user
+   */
+  @Post()
+  public async createUser(
+    @Body() body: { name: string; email: string }
+  ): Promise<User> {
+    const newUser: User = {
+      id: users.length + 1,
+      name: body.name,
+      email: body.email
+    };
+    users.push(newUser);
+    this.setStatus(201);
+    return newUser;
+  }
+}
+```
+
+<Tip>
+  JSDoc comments like `@summary` are automatically included in your OpenAPI specification for better documentation.
+</Tip>
+
+## Step 3: Generate Routes and Spec
+
+Add these scripts to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsoa spec-and-routes && tsc",
+    "dev": "npm run build && node dist/server.js"
+  }
+}
+```
+
+Run the build command:
+
+```bash
+npm run build
+```
+
+This will generate:
+- `dist/swagger.json` - Your OpenAPI specification
+- `src/routes.ts` - Express route handlers with validation
+
+## Step 4: Create Your Server
+
+Create the Express server that uses the generated routes:
+
+```typescript src/server.ts
+import express, { Application } from 'express';
+import { RegisterRoutes } from './routes';
+
+const app: Application = express();
+const PORT = 3000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Register tsoa routes
+RegisterRoutes(app);
+
+// Error handling
+app.use((err: any, req: any, res: any, next: any) => {
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  res.status(status).json({ message });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`OpenAPI spec available at dist/swagger.json`);
+});
+```
+
+## Step 5: Run Your API
+
+Start the server:
+
+```bash
+npm run dev
+```
+
+Your API is now running on `http://localhost:3000`!
+
+## Step 6: Test Your Endpoints
+
+Try these curl commands to test your API:
+
+<CodeGroup>
+```bash Get all users
+curl http://localhost:3000/users
+```
+
+```bash Get specific user
+curl http://localhost:3000/users/1
+```
+
+```bash Create new user
+curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Johnson", "email": "alice@example.com"}'
+```
+</CodeGroup>
+
+## What Just Happened?
+
+Let's break down what tsoa did for you:
+
+1. **Analyzed your TypeScript code** - tsoa read your controller decorators and type definitions
+2. **Generated OpenAPI spec** - Created a complete `swagger.json` with all your endpoints, parameters, and response types
+3. **Generated route handlers** - Created `routes.ts` with:
+   - Express route registration
+   - Request validation based on your TypeScript types
+   - Automatic serialization/deserialization
+   - Error handling
+
+## View Your OpenAPI Spec
+
+Your generated OpenAPI specification is available at `dist/swagger.json`. You can:
+
+- View it in [Swagger Editor](https://editor.swagger.io/)
+- Serve it with [Swagger UI](https://swagger.io/tools/swagger-ui/)
+- Use it to generate client SDKs with [OpenAPI Generator](https://openapi-generator.tech/)
+
+```bash
+# View the spec
+cat dist/swagger.json
+```
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core Concepts" icon="book" href="/concepts/controllers">
+    Learn about controllers, decorators, and models
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Add authentication and authorization to your API
+  </Card>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Understand tsoa's validation capabilities
+  </Card>
+  <Card title="Framework Guides" icon="plug" href="/guides/express-setup">
+    Detailed setup guides for Express, Koa, and Hapi
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Routes not generating">
+    Make sure your `tsoa.json` is in the project root and the `entryFile` path is correct. Also ensure your TypeScript compilation is successful.
+  </Accordion>
+
+  <Accordion title="Decorators not working">
+    Verify that `experimentalDecorators` and `emitDecoratorMetadata` are enabled in your `tsconfig.json`.
+  </Accordion>
+
+  <Accordion title="Validation errors">
+    Check that your request body matches the expected TypeScript types. tsoa validates all incoming requests based on your type definitions.
+  </Accordion>
+
+  <Accordion title="404 errors">
+    Make sure you've called `RegisterRoutes(app)` in your server file and that your routes are being generated in the correct directory specified in `tsoa.json`.
+  </Accordion>
+</AccordionGroup>

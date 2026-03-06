@@ -1,0 +1,471 @@
+---
+title: "Security Decorators"
+description: "Define authentication and authorization requirements"
+---
+
+## Overview
+
+Security decorators specify authentication and authorization requirements for controllers and endpoints. They integrate with your authentication middleware and generate accurate OpenAPI security documentation.
+
+## @Security
+
+Requires authentication using specified security scheme(s).
+
+```typescript
+function Security(
+  name: string | { [name: string]: string[] },
+  scopes?: string[]
+): ClassDecorator & MethodDecorator
+```
+
+<ParamField path="name" type="string | object" required>
+  The security scheme name (from `securityDefinitions` in tsoa.json) or an object for AND security.
+</ParamField>
+
+<ParamField path="scopes" type="string[]" optional>
+  Required OAuth2/OpenID scopes for this endpoint.
+</ParamField>
+
+## Configuration
+
+Define security schemes in your `tsoa.json`:
+
+```json
+{
+  "spec": {
+    "securityDefinitions": {
+      "api_key": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      },
+      "bearer_token": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://example.com/oauth/authorize",
+            "tokenUrl": "https://example.com/oauth/token",
+            "scopes": {
+              "read:users": "Read user information",
+              "write:users": "Modify user information",
+              "admin": "Administrative access"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Usage
+
+### API Key Authentication
+
+```typescript
+import { Get, Route, Security } from 'tsoa';
+
+@Route('api')
+export class ApiController {
+  @Security('api_key')
+  @Get('data')
+  public async getData(): Promise<Data[]> {
+    // Only accessible with valid API key
+    return await dataService.findAll();
+  }
+}
+```
+
+### Bearer Token (JWT) Authentication
+
+```typescript
+import { Get, Post, Route, Security, Request } from 'tsoa';
+
+interface AuthenticatedRequest {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+  };
+}
+
+@Route('users')
+export class UserController {
+  @Security('bearer_token')
+  @Get('me')
+  public async getCurrentUser(
+    @Request() request: AuthenticatedRequest
+  ): Promise<User> {
+    // User is authenticated and available in request.user
+    return await userService.findById(request.user.id);
+  }
+  
+  @Security('bearer_token')
+  @Post('me/profile')
+  public async updateProfile(
+    @Request() request: AuthenticatedRequest,
+    @Body() profile: UpdateProfileRequest
+  ): Promise<User> {
+    return await userService.update(request.user.id, profile);
+  }
+}
+```
+
+### OAuth2 with Scopes
+
+```typescript
+import { Get, Post, Delete, Route, Security } from 'tsoa';
+
+@Route('posts')
+export class PostController {
+  // Requires 'read:posts' scope
+  @Security('oauth2', ['read:posts'])
+  @Get()
+  public async listPosts(): Promise<Post[]> {
+    return await postService.findAll();
+  }
+  
+  // Requires 'write:posts' scope
+  @Security('oauth2', ['write:posts'])
+  @Post()
+  public async createPost(
+    @Body() post: CreatePostRequest
+  ): Promise<Post> {
+    return await postService.create(post);
+  }
+  
+  // Requires both 'write:posts' and 'delete:posts' scopes
+  @Security('oauth2', ['write:posts', 'delete:posts'])
+  @Delete('{postId}')
+  public async deletePost(@Path() postId: string): Promise<void> {
+    await postService.delete(postId);
+  }
+}
+```
+
+### Controller-Level Security
+
+Apply security to all methods in a controller:
+
+```typescript
+import { Get, Post, Route, Security } from 'tsoa';
+
+@Security('bearer_token')
+@Route('account')
+export class AccountController {
+  // All methods require bearer token authentication
+  
+  @Get('profile')
+  public async getProfile(): Promise<Profile> {
+    return await profileService.get();
+  }
+  
+  @Post('settings')
+  public async updateSettings(
+    @Body() settings: Settings
+  ): Promise<Settings> {
+    return await settingsService.update(settings);
+  }
+}
+```
+
+### OR Security (Alternative Methods)
+
+Multiple `@Security` decorators create an OR relationship:
+
+```typescript
+import { Get, Route, Security } from 'tsoa';
+
+@Route('api')
+export class ApiController {
+  // Accessible with EITHER api_key OR bearer_token
+  @Security('api_key')
+  @Security('bearer_token')
+  @Get('data')
+  public async getData(): Promise<Data[]> {
+    return await dataService.findAll();
+  }
+  
+  // Accessible with EITHER oauth2 OR api_key
+  @Security('oauth2', ['read:data'])
+  @Security('api_key')
+  @Get('protected')
+  public async getProtected(): Promise<any> {
+    return await dataService.getProtected();
+  }
+}
+```
+
+### AND Security (Multiple Requirements)
+
+Pass an object to require multiple security schemes simultaneously:
+
+```typescript
+import { Get, Route, Security } from 'tsoa';
+
+@Route('admin')
+export class AdminController {
+  // Requires BOTH api_key AND oauth2
+  @Security({
+    api_key: [],
+    oauth2: ['admin']
+  })
+  @Get('sensitive')
+  public async getSensitive(): Promise<SensitiveData> {
+    return await dataService.getSensitive();
+  }
+}
+```
+
+### Complex Security Combinations
+
+```typescript
+import { Get, Route, Security } from 'tsoa';
+
+@Route('resources')
+export class ResourceController {
+  // (api_key AND bearer_token) OR oauth2 with admin scope
+  @Security({
+    api_key: [],
+    bearer_token: []
+  })
+  @Security('oauth2', ['admin'])
+  @Get('protected')
+  public async getProtected(): Promise<Resource[]> {
+    return await resourceService.findProtected();
+  }
+}
+```
+
+## @NoSecurity
+
+Explicitly marks an endpoint as not requiring security, even if the controller has security applied.
+
+```typescript
+function NoSecurity(): ClassDecorator & MethodDecorator
+```
+
+### Override Controller Security
+
+```typescript
+import { Get, Route, Security, NoSecurity } from 'tsoa';
+
+@Security('bearer_token')
+@Route('api')
+export class ApiController {
+  // Requires authentication
+  @Get('private')
+  public async getPrivate(): Promise<Data> {
+    return await dataService.getPrivate();
+  }
+  
+  // Public endpoint - no authentication required
+  @NoSecurity()
+  @Get('public')
+  public async getPublic(): Promise<Data> {
+    return await dataService.getPublic();
+  }
+  
+  // Public health check
+  @NoSecurity()
+  @Get('health')
+  public async health(): Promise<{ status: string }> {
+    return { status: 'ok' };
+  }
+}
+```
+
+### Override Root Security
+
+If you've configured `rootSecurity` in `tsoa.json`, use `@NoSecurity` to make specific endpoints public:
+
+```json
+{
+  "spec": {
+    "rootSecurity": [
+      { "bearer_token": [] }
+    ]
+  }
+}
+```
+
+```typescript
+import { Get, Route, NoSecurity } from 'tsoa';
+
+@Route('api')
+export class ApiController {
+  // Protected by rootSecurity
+  @Get('data')
+  public async getData(): Promise<Data[]> {
+    return await dataService.findAll();
+  }
+  
+  // Public - overrides rootSecurity
+  @NoSecurity()
+  @Get('status')
+  public async getStatus(): Promise<{ status: string }> {
+    return { status: 'operational' };
+  }
+}
+```
+
+## Authentication Middleware
+
+Implement authentication logic in your authentication module:
+
+### Express Example
+
+```typescript
+// authentication.ts
+import { Request } from 'express';
+import * as jwt from 'jsonwebtoken';
+
+export async function expressAuthentication(
+  request: Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+  if (securityName === 'api_key') {
+    const apiKey = request.header('X-API-Key');
+    if (!apiKey) {
+      throw new Error('No API key provided');
+    }
+    
+    const isValid = await validateApiKey(apiKey);
+    if (!isValid) {
+      throw new Error('Invalid API key');
+    }
+    
+    return { apiKey };
+  }
+  
+  if (securityName === 'bearer_token') {
+    const token = request.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+      return decoded;
+    } catch (err) {
+      throw new Error('Invalid token');
+    }
+  }
+  
+  if (securityName === 'oauth2') {
+    const token = request.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      throw new Error('No token provided');
+    }
+    
+    const decoded = await verifyOAuthToken(token);
+    
+    // Check scopes
+    if (scopes) {
+      const userScopes = decoded.scopes || [];
+      const hasRequiredScopes = scopes.every(scope => 
+        userScopes.includes(scope)
+      );
+      
+      if (!hasRequiredScopes) {
+        throw new Error('Insufficient permissions');
+      }
+    }
+    
+    return decoded;
+  }
+  
+  throw new Error('Unknown security scheme');
+}
+```
+
+### Configure in tsoa.json
+
+```json
+{
+  "routes": {
+    "authenticationModule": "./src/authentication.ts"
+  }
+}
+```
+
+## Common Security Schemes
+
+### API Key
+
+```json
+{
+  "api_key": {
+    "type": "apiKey",
+    "name": "X-API-Key",
+    "in": "header"
+  }
+}
+```
+
+### HTTP Bearer (JWT)
+
+```json
+{
+  "bearer_token": {
+    "type": "http",
+    "scheme": "bearer",
+    "bearerFormat": "JWT"
+  }
+}
+```
+
+### HTTP Basic
+
+```json
+{
+  "basic_auth": {
+    "type": "http",
+    "scheme": "basic"
+  }
+}
+```
+
+### OAuth2 Authorization Code
+
+```json
+{
+  "oauth2": {
+    "type": "oauth2",
+    "flows": {
+      "authorizationCode": {
+        "authorizationUrl": "https://example.com/oauth/authorize",
+        "tokenUrl": "https://example.com/oauth/token",
+        "scopes": {
+          "read": "Read access",
+          "write": "Write access",
+          "admin": "Admin access"
+        }
+      }
+    }
+  }
+}
+```
+
+### OpenID Connect
+
+```json
+{
+  "openid": {
+    "type": "openIdConnect",
+    "openIdConnectUrl": "https://example.com/.well-known/openid-configuration"
+  }
+}
+```
+
+## See Also
+
+- [Configuration: securityDefinitions](/api/interfaces/spec-config#securitydefinitions)
+- [Configuration: rootSecurity](/api/interfaces/spec-config#rootsecurity)
+- [Configuration: authenticationModule](/api/interfaces/routes-config#authenticationmodule)

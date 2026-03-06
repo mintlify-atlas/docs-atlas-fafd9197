@@ -1,0 +1,477 @@
+---
+title: "Parameter Decorators"
+description: "Inject and validate request parameters"
+---
+
+## Overview
+
+Parameter decorators extract and inject values from various parts of the HTTP request into your controller method parameters. tsoa automatically validates these parameters against their TypeScript types and generates appropriate OpenAPI documentation.
+
+## Request Body
+
+### @Body
+
+Injects the entire request body.
+
+```typescript
+function Body(): ParameterDecorator
+```
+
+```typescript
+import { Post, Body, Route } from 'tsoa';
+
+interface CreateUserRequest {
+  username: string;
+  email: string;
+  age?: number;
+}
+
+@Route('users')
+export class UserController {
+  @Post()
+  public async createUser(
+    @Body() body: CreateUserRequest
+  ): Promise<User> {
+    return await userService.create(body);
+  }
+}
+```
+
+### @BodyProp
+
+Injects a specific property from the request body.
+
+```typescript
+function BodyProp(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the body property. If omitted, uses the parameter name.
+</ParamField>
+
+```typescript
+@Post('users')
+public async createUser(
+  @BodyProp() username: string,
+  @BodyProp() email: string,
+  @BodyProp() age?: number
+): Promise<User> {
+  return await userService.create({ username, email, age });
+}
+```
+
+## Path Parameters
+
+### @Path
+
+Injects a value from the URL path.
+
+```typescript
+function Path(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the path parameter. If omitted, uses the parameter name.
+</ParamField>
+
+```typescript
+import { Get, Path, Route } from 'tsoa';
+
+@Route('users')
+export class UserController {
+  // GET /users/{userId}
+  @Get('{userId}')
+  public async getUser(
+    @Path() userId: string
+  ): Promise<User> {
+    return await userService.findById(userId);
+  }
+  
+  // GET /users/{userId}/posts/{postId}
+  @Get('{userId}/posts/{postId}')
+  public async getUserPost(
+    @Path() userId: string,
+    @Path() postId: string
+  ): Promise<Post> {
+    return await postService.findOne(userId, postId);
+  }
+  
+  // Using renamed path parameter
+  @Get('{user_id}')
+  public async getUserById(
+    @Path('user_id') userId: string
+  ): Promise<User> {
+    return await userService.findById(userId);
+  }
+}
+```
+
+## Query Parameters
+
+### @Query
+
+Injects a single query string parameter.
+
+```typescript
+function Query(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the query parameter. If omitted, uses the parameter name.
+</ParamField>
+
+```typescript
+import { Get, Query, Route } from 'tsoa';
+
+@Route('products')
+export class ProductController {
+  /**
+   * @param category Filter by category
+   * @param minPrice Minimum price filter
+   * @param maxPrice Maximum price filter
+   * @param inStock Show only in-stock items
+   * @param tags Filter by tags
+   */
+  @Get()
+  public async searchProducts(
+    @Query() category?: string,
+    @Query() minPrice?: number,
+    @Query() maxPrice?: number,
+    @Query() inStock?: boolean,
+    @Query() tags?: string[]
+  ): Promise<Product[]> {
+    return await productService.search({
+      category,
+      minPrice,
+      maxPrice,
+      inStock,
+      tags
+    });
+  }
+  
+  // Renamed query parameter
+  @Get('search')
+  public async search(
+    @Query('q') searchTerm: string,
+    @Query('page_size') pageSize: number = 20
+  ): Promise<Product[]> {
+    return await productService.search(searchTerm, pageSize);
+  }
+}
+```
+
+### @Queries
+
+Injects all query parameters as a single object.
+
+```typescript
+function Queries(): ParameterDecorator
+```
+
+```typescript
+interface ProductSearchParams {
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  inStock?: boolean;
+  sortBy?: 'price' | 'name' | 'date';
+  sortOrder?: 'asc' | 'desc';
+}
+
+@Route('products')
+export class ProductController {
+  /**
+   * @param queryParams Search and filter parameters
+   */
+  @Get('search')
+  public async searchProducts(
+    @Queries() queryParams: ProductSearchParams
+  ): Promise<Product[]> {
+    return await productService.search(queryParams);
+  }
+}
+```
+
+## Headers
+
+### @Header
+
+Injects a value from the request headers.
+
+```typescript
+function Header(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the header. If omitted, uses the parameter name.
+</ParamField>
+
+```typescript
+import { Get, Header, Route } from 'tsoa';
+
+@Route('api')
+export class ApiController {
+  @Get('profile')
+  public async getProfile(
+    @Header('Authorization') authorization: string,
+    @Header('X-Request-ID') requestId?: string,
+    @Header('Accept-Language') language?: string
+  ): Promise<UserProfile> {
+    const token = authorization.replace('Bearer ', '');
+    return await profileService.get(token, language);
+  }
+  
+  // Renamed header
+  @Get('data')
+  public async getData(
+    @Header('x-api-key') apiKey: string
+  ): Promise<any> {
+    return await dataService.fetch(apiKey);
+  }
+}
+```
+
+## File Uploads
+
+### @UploadedFile
+
+Injects a single uploaded file.
+
+```typescript
+function UploadedFile(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the file field. If omitted, any file field will be accepted.
+</ParamField>
+
+```typescript
+import { Post, UploadedFile, Route, File } from 'tsoa';
+
+@Route('uploads')
+export class UploadController {
+  @Post('avatar')
+  public async uploadAvatar(
+    @UploadedFile('avatar') file: File
+  ): Promise<{ url: string }> {
+    const url = await storageService.upload(file);
+    return { url };
+  }
+  
+  // Optional file upload
+  @Post('document')
+  public async uploadDocument(
+    @UploadedFile('document') file?: File
+  ): Promise<{ uploaded: boolean; url?: string }> {
+    if (!file) {
+      return { uploaded: false };
+    }
+    const url = await storageService.upload(file);
+    return { uploaded: true, url };
+  }
+}
+```
+
+### @UploadedFiles
+
+Injects multiple uploaded files.
+
+```typescript
+function UploadedFiles(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the files field.
+</ParamField>
+
+```typescript
+@Route('uploads')
+export class UploadController {
+  @Post('gallery')
+  public async uploadGallery(
+    @UploadedFiles('images') files: File[]
+  ): Promise<{ urls: string[] }> {
+    const urls = await Promise.all(
+      files.map(file => storageService.upload(file))
+    );
+    return { urls };
+  }
+  
+  // Multiple file fields
+  @Post('mixed')
+  public async uploadMixed(
+    @UploadedFile('thumbnail') thumbnail: File,
+    @UploadedFiles('attachments') attachments: File[]
+  ): Promise<UploadResult> {
+    const thumbnailUrl = await storageService.upload(thumbnail);
+    const attachmentUrls = await Promise.all(
+      attachments.map(file => storageService.upload(file))
+    );
+    return { thumbnailUrl, attachmentUrls };
+  }
+}
+```
+
+### @FormField
+
+Injects a form field value from multipart/form-data.
+
+```typescript
+function FormField(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the form field. If omitted, uses the parameter name.
+</ParamField>
+
+```typescript
+@Route('uploads')
+export class UploadController {
+  /**
+   * Upload file with metadata
+   * 
+   * @param file The file to upload
+   * @param title Title of the file
+   * @param description Description of the file
+   */
+  @Post('document')
+  public async uploadWithMetadata(
+    @UploadedFile('file') file: File,
+    @FormField('title') title: string,
+    @FormField('description') description?: string
+  ): Promise<Document> {
+    return await documentService.create({
+      file,
+      title,
+      description
+    });
+  }
+}
+```
+
+## Advanced Parameters
+
+### @Request
+
+Injects the raw framework request object.
+
+```typescript
+function Request(): ParameterDecorator
+```
+
+```typescript
+import { Get, Request, Route } from 'tsoa';
+import { Request as ExpressRequest } from 'express';
+
+@Route('api')
+export class ApiController {
+  @Get('info')
+  public async getRequestInfo(
+    @Request() request: ExpressRequest
+  ): Promise<any> {
+    return {
+      ip: request.ip,
+      method: request.method,
+      path: request.path,
+      userAgent: request.get('user-agent')
+    };
+  }
+}
+```
+
+### @RequestProp
+
+Injects a specific property from the request object.
+
+```typescript
+function RequestProp(name?: string): ParameterDecorator
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the request property.
+</ParamField>
+
+```typescript
+// Express
+@Post('data')
+public async handleData(
+  @RequestProp('body') body: any
+): Promise<void> {
+  // Access request.body
+}
+
+// Hapi
+@Post('data')
+public async handleData(
+  @RequestProp('payload') payload: any
+): Promise<void> {
+  // Access request.payload
+}
+```
+
+### @Inject
+
+Marks a parameter as manually injected, excluding it from route generation and documentation.
+
+```typescript
+function Inject(): ParameterDecorator
+```
+
+```typescript
+import { Get, Inject, Route } from 'tsoa';
+
+@Route('users')
+export class UserController {
+  @Get('me')
+  public async getCurrentUser(
+    @Inject() currentUser: User // Injected via middleware
+  ): Promise<User> {
+    return currentUser;
+  }
+}
+```
+
+## Validation
+
+### Type-Based Validation
+
+tsoa automatically validates parameters based on their TypeScript types:
+
+```typescript
+@Get('user/{userId}')
+public async getUser(
+  @Path() userId: string,      // Must be a string
+  @Query() age?: number,        // Must be a number if provided
+  @Query() active?: boolean,    // Must be a boolean if provided
+  @Query() roles?: string[]     // Must be an array of strings if provided
+): Promise<User> {
+  return await userService.find({ userId, age, active, roles });
+}
+```
+
+### JSDoc Validation Tags
+
+```typescript
+/**
+ * @param age User's age
+ * @param weight User's weight
+ * 
+ * @isInt age Age must be an integer
+ * @isFloat weight Weight must be a float
+ * @minimum age 0 Age must be non-negative
+ * @maximum age 150 Age must be realistic
+ */
+@Post('users')
+public async createUser(
+  @Query() age: number,
+  @Query() weight: number
+): Promise<User> {
+  return await userService.create({ age, weight });
+}
+```
+
+## See Also
+
+- [HTTP Method Decorators](/api/decorators/methods)
+- [Response Decorators](/api/decorators/response)
+- [@Example Decorator](/api/decorators/example)

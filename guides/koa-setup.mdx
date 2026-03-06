@@ -1,0 +1,464 @@
+---
+title: Koa Setup
+description: Complete guide to setting up tsoa with Koa.js
+---
+
+This guide walks you through integrating tsoa with a Koa.js application, from initial setup to running your API server.
+
+## Installation
+
+<Steps>
+
+<Step title="Install Dependencies">
+
+Install tsoa along with Koa and its dependencies:
+
+```bash
+npm install tsoa koa @koa/router koa-bodyparser
+npm install --save-dev @types/koa @types/koa__router @types/node typescript
+```
+
+</Step>
+
+<Step title="Configure tsoa">
+
+Create a `tsoa.json` configuration file in your project root:
+
+```json tsoa.json
+{
+  "entryFile": "src/app.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "spec": {
+    "outputDirectory": "build",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src",
+    "middleware": "koa"
+  }
+}
+```
+
+<Warning>The `middleware` field must be set to `"koa"` for Koa.js projects.</Warning>
+
+</Step>
+
+<Step title="Create a Controller">
+
+Create your first controller with tsoa decorators:
+
+```typescript src/controllers/userController.ts
+import { Controller, Get, Post, Route, Body, Path, SuccessResponse } from 'tsoa';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+@Route('users')
+export class UserController extends Controller {
+  /**
+   * Retrieves a user by ID
+   * @param userId The user's identifier
+   */
+  @Get('{userId}')
+  public async getUser(@Path() userId: number): Promise<User> {
+    return {
+      id: userId,
+      name: 'John Doe',
+      email: 'john@example.com'
+    };
+  }
+
+  /**
+   * Creates a new user
+   */
+  @Post()
+  @SuccessResponse('201', 'Created')
+  public async createUser(@Body() requestBody: CreateUserRequest): Promise<User> {
+    this.setStatus(201);
+    return {
+      id: Math.floor(Math.random() * 10000),
+      ...requestBody
+    };
+  }
+}
+```
+
+</Step>
+
+<Step title="Set Up Koa Server">
+
+Create your Koa application and register tsoa routes:
+
+```typescript src/app.ts
+import Koa from 'koa';
+import Router from '@koa/router';
+import bodyParser from 'koa-bodyparser';
+import { RegisterRoutes } from './routes';
+
+const app = new Koa();
+const router = new Router();
+
+// Middleware
+app.use(bodyParser());
+
+// Register tsoa routes
+RegisterRoutes(router);
+
+// Error handling - must come before routes
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    ctx.status = err.status || 500;
+    ctx.body = {
+      message: err.message || 'An error occurred during the request.',
+      status: ctx.status,
+      fields: err.fields
+    };
+  }
+});
+
+// Apply routes
+app.use(router.routes());
+app.use(router.allowedMethods());
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
+```
+
+</Step>
+
+<Step title="Generate Routes and Spec">
+
+Add scripts to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsoa spec-and-routes && tsc",
+    "start": "node build/app.js",
+    "dev": "tsoa spec-and-routes && ts-node src/app.ts"
+  }
+}
+```
+
+Generate routes and OpenAPI spec:
+
+```bash
+npm run build
+```
+
+This creates:
+- `src/routes.ts` - Generated route handlers
+- `build/swagger.json` - OpenAPI specification
+
+</Step>
+
+<Step title="Start the Server">
+
+```bash
+npm start
+```
+
+Your API is now running at `http://localhost:3000`!
+
+Test it:
+```bash
+curl http://localhost:3000/users/1
+```
+
+</Step>
+
+</Steps>
+
+## Koa Context Access
+
+Access the Koa context object in your controllers:
+
+```typescript
+import { Controller, Get, Request } from 'tsoa';
+import { Context } from 'koa';
+
+@Route('example')
+export class ExampleController extends Controller {
+  @Get('with-context')
+  public async withContext(
+    @Request() ctx: Context
+  ): Promise<any> {
+    // Access request headers
+    const userAgent = ctx.headers['user-agent'];
+    
+    // Access custom state
+    const userId = ctx.state.userId;
+    
+    // Set response headers
+    ctx.set('X-Custom-Header', 'value');
+    
+    return { userAgent, userId };
+  }
+}
+```
+
+## Middleware Integration
+
+Apply Koa middleware to specific routes or controllers:
+
+```typescript
+import { Controller, Get, Middlewares } from 'tsoa';
+import { Context, Next, Middleware } from 'koa';
+
+const authMiddleware: Middleware = async (ctx: Context, next: Next) => {
+  if (ctx.headers.authorization) {
+    // Set user info in context state
+    ctx.state.user = await verifyToken(ctx.headers.authorization);
+    await next();
+  } else {
+    ctx.throw(401, 'Unauthorized');
+  }
+};
+
+const loggingMiddleware: Middleware = async (ctx: Context, next: Next) => {
+  console.log(`${ctx.method} ${ctx.path}`);
+  await next();
+};
+
+@Route('protected')
+@Middlewares(authMiddleware)
+export class ProtectedController extends Controller {
+  @Get('data')
+  @Middlewares(loggingMiddleware)
+  public async getData(): Promise<any> {
+    return { data: 'sensitive information' };
+  }
+}
+```
+
+## Error Handling
+
+Koa uses a different error handling pattern than Express:
+
+<CodeGroup>
+
+```typescript Basic Error Handler
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    ctx.status = err.status || 500;
+    ctx.body = {
+      message: err.message,
+      status: ctx.status
+    };
+  }
+});
+```
+
+```typescript Advanced Error Handler
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err: any) {
+    // Log error
+    console.error('Error:', err);
+    
+    // Set status
+    ctx.status = err.status || 500;
+    
+    // Set body with validation errors
+    ctx.body = {
+      message: err.message || 'Internal Server Error',
+      status: ctx.status,
+      fields: err.fields || undefined,
+      name: err.name
+    };
+    
+    // Emit error event
+    ctx.app.emit('error', err, ctx);
+  }
+});
+```
+
+</CodeGroup>
+
+## Using ctx.throw
+
+Koa provides a convenient `ctx.throw()` method:
+
+```typescript
+import { Controller, Get, Path, Request } from 'tsoa';
+import { Context } from 'koa';
+
+@Route('items')
+export class ItemController extends Controller {
+  @Get('{id}')
+  public async getItem(
+    @Path() id: number,
+    @Request() ctx: Context
+  ): Promise<Item> {
+    const item = await findItem(id);
+    
+    if (!item) {
+      ctx.throw(404, 'Item not found');
+    }
+    
+    return item;
+  }
+}
+```
+
+## State Management
+
+Share data between middleware using `ctx.state`:
+
+```typescript
+// Middleware to set state
+const userMiddleware: Middleware = async (ctx, next) => {
+  const token = ctx.headers.authorization;
+  ctx.state.user = await getUserFromToken(token);
+  await next();
+};
+
+// Controller accessing state
+@Route('profile')
+@Middlewares(userMiddleware)
+export class ProfileController extends Controller {
+  @Get()
+  public async getProfile(@Request() ctx: Context): Promise<User> {
+    return ctx.state.user;
+  }
+}
+```
+
+## Base Path Configuration
+
+Configure a base path for all routes:
+
+```json tsoa.json
+{
+  "routes": {
+    "routesDir": "src",
+    "middleware": "koa",
+    "basePath": "/api/v1"
+  }
+}
+```
+
+All routes will be prefixed with `/api/v1`.
+
+## Router Prefix
+
+Alternatively, use Koa Router's prefix option:
+
+```typescript
+const router = new Router({
+  prefix: '/api/v1'
+});
+
+RegisterRoutes(router);
+```
+
+## Query Parameters
+
+```typescript
+import { Controller, Get, Query } from 'tsoa';
+
+@Route('search')
+export class SearchController extends Controller {
+  @Get()
+  public async search(
+    @Query() q: string,
+    @Query() limit?: number,
+    @Query() offset?: number
+  ): Promise<SearchResult[]> {
+    return performSearch(q, limit || 10, offset || 0);
+  }
+}
+```
+
+## Headers
+
+```typescript
+import { Controller, Get, Header, Request } from 'tsoa';
+import { Context } from 'koa';
+
+@Route('api')
+export class ApiController extends Controller {
+  @Get('version')
+  public async getVersion(
+    @Header('x-api-version') apiVersion?: string,
+    @Request() ctx: Context
+  ): Promise<any> {
+    // Set response header
+    ctx.set('X-Response-Version', '1.0');
+    
+    return { requestedVersion: apiVersion };
+  }
+}
+```
+
+## Comparison with Express
+
+<Tabs>
+  <Tab title="Express">
+    ```typescript
+    import express from 'express';
+    import { RegisterRoutes } from './routes';
+    
+    const app = express();
+    RegisterRoutes(app);
+    
+    app.use((err, req, res, next) => {
+      res.status(err.status || 500).json(err);
+    });
+    ```
+  </Tab>
+  <Tab title="Koa">
+    ```typescript
+    import Koa from 'koa';
+    import Router from '@koa/router';
+    import { RegisterRoutes } from './routes';
+    
+    const app = new Koa();
+    const router = new Router();
+    RegisterRoutes(router);
+    
+    app.use(async (ctx, next) => {
+      try {
+        await next();
+      } catch (err: any) {
+        ctx.status = err.status || 500;
+        ctx.body = err;
+      }
+    });
+    
+    app.use(router.routes());
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Learn how to handle file uploads with Koa
+  </Card>
+  <Card title="Authentication" icon="lock" href="/concepts/authentication">
+    Secure your API with authentication
+  </Card>
+  <Card title="Validation" icon="check" href="/concepts/validation">
+    Implement request validation
+  </Card>
+  <Card title="Dependency Injection" icon="plug" href="/guides/dependency-injection">
+    Use IoC containers with your controllers
+  </Card>
+</CardGroup>
